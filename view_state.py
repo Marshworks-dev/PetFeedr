@@ -19,6 +19,7 @@ from flask import g, has_request_context, request
 
 import camera
 import dashboard
+import graze_rules
 import hopper
 import passcode
 
@@ -109,8 +110,14 @@ def _timeline(ctx):
 def _schedule_rows(ctx):
     """The editor lists the times as set, not today's randomized draw."""
     rows = sorted(ctx['schedules'], key=lambda s: s['base_time_24h'])
+    entries = [{'time': s['base_time_24h'], 'is_fixed': s['is_fixed'], 'graze': s['graze']}
+               for s in rows]
+    # Why each row can't graze where it is (None when it can). On a graze
+    # saved before the rules it explains why the row may feed all at once
     return [{'base_time': s['base_time_24h'], 'time': s['base_time_12h'],
-             'portion': s['portion'], 'is_fixed': s['is_fixed'], 'graze': s['graze']} for s in rows]
+             'portion': s['portion'], 'is_fixed': s['is_fixed'], 'graze': s['graze'],
+             'graze_problem': graze_rules.graze_problem(e, entries)}
+            for s, e in zip(rows, entries)]
 
 
 def _feed_card(ctx):

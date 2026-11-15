@@ -1,6 +1,6 @@
 # Grazes get room: spacing and a midnight cutoff
 
-Status: draft
+Status: shipped
 
 Intent: A graze needs its whole window to itself, and that window has to
 end before midnight. The window is the 30-minute graze plus the slot's
@@ -9,10 +9,12 @@ breaks this and says why in plain words, instead of the feeder quietly
 feeding all at once or stacking two meals in the bowl.
 
 ## Done when
-- [test] A graze's set time can be at most 23:30 when Fixed and 23:00
-      when ±30. Adding such a slot, turning Graze on, or switching a
-      graze from Fixed to ±30 past that time is refused (409) with a
-      message that names the latest allowed time.
+- [test] A graze's set time must be before 23:30 when Fixed and before
+      23:00 when ±30 (its last pulse lands 30 minutes after the start and
+      must still be dated today). Turning Graze on, or switching a graze
+      from Fixed to ±30, past that time is refused (409) with a message
+      that names the cutoff. (Adds can't create a graze, so they only
+      face the spacing rule.)
 - [test] When either slot is a graze, two set times must be at least
       40 minutes apart (30 for the graze plus the existing 10-minute
       buffer). An add or a Graze toggle that breaks this is refused (409)
@@ -27,7 +29,7 @@ feeding all at once or stacking two meals in the bowl.
 - [check] In the schedule editor, the Graze chip on a row that can't
       graze reads as unavailable. Tapping it shows the reason ("A graze
       needs 30 minutes before midnight. Set this one to Fixed, or move
-      it to 11:00 PM or earlier"), and its aria-label says the same.
+      it before 11:00 PM."), and its aria-label says the same.
       A refused add shows the server's message as the toast.
 - [test] A schedule already saved with a rule-breaking graze still loads
       and runs: past the cutoff it feeds all at once (the existing

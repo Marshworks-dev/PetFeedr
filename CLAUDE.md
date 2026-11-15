@@ -25,6 +25,7 @@ web_interface.py          # Flask app: index, feed (manual cap + cooldown), refi
 schedule_routes.py        # Blueprint: add/delete/toggle/portion edits to the schedule
 dashboard.py              # Read-only view-model for the index page
 schedule_store.py         # The one parser/writer for feeding_schedules.txt
+graze_rules.py            # Where a graze may sit: 40 min clear, ends before midnight (pure)
 atomicfile.py             # write_atomic(): temp + fsync + os.replace for every state file
 responses.py              # wants_json / error_response shared by route modules
 manual_limit.py           # Daily manual-feed cap (half the schedule, floor ¾ cup) + cooldown

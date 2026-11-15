@@ -54,29 +54,74 @@ class TestApplyRandomOffset(unittest.TestCase):
         with patch('feeder_core.random.randint', return_value=-30):
             self.assertEqual(apply_random_offset("00:10", 30, []), "00:10")
 
-    def test_forward_past_midnight_wraps(self):
-        # Quirk pinned: a forward offset can cross midnight and produce an
-        # early-morning time ("00:20") rather than clamping.
-        with patch('feeder_core.random.randint', return_value=30):
-            self.assertEqual(apply_random_offset("23:50", 30, []), "00:20")
+    def test_forward_past_midnight_clamps_to_base(self):
+        # A forward roll from 23:45 used to land at 00:05, before the day's
+        # earlier meals
+        with patch('feeder_core.random.randint', return_value=20):
+            self.assertEqual(apply_random_offset("23:45", 30, []), "23:45")
 
     def test_conflict_avoidance_retries(self):
         # First offset lands within 10 min of an existing time, second is clear.
-        existing = [datetime.strptime("08:15", "%H:%M")]
+        existing = [(datetime.strptime("08:15", "%H:%M"), False)]
         with patch('feeder_core.random.randint', side_effect=[10, -20]):
             self.assertEqual(apply_random_offset("08:00", 30, existing), "07:40")
 
-    def test_exact_collision_allowed(self):
-        # Quirk pinned: "diff > 0" in the conflict check means landing on
-        # exactly the same minute as another feeding is NOT a conflict.
-        existing = [datetime.strptime("08:15", "%H:%M")]
-        with patch('feeder_core.random.randint', return_value=15):
-            self.assertEqual(apply_random_offset("08:00", 30, existing), "08:15")
+    def test_exact_collision_is_a_conflict(self):
+        existing = [(datetime.strptime("08:15", "%H:%M"), False)]
+        with patch('feeder_core.random.randint', side_effect=[15, -20]):
+            self.assertEqual(apply_random_offset("08:00", 30, existing), "07:40")
 
     def test_gives_up_after_ten_tries(self):
-        existing = [datetime.strptime("08:03", "%H:%M")]
+        existing = [(datetime.strptime("08:03", "%H:%M"), False)]
         with patch('feeder_core.random.randint', return_value=5):
             self.assertEqual(apply_random_offset("08:00", 30, existing), "08:00")
+
+    def test_graze_is_busy_for_its_whole_span(self):
+        # A graze from 08:00 runs to 08:30: 08:35 is inside its buffer, 08:40 clear
+        graze = [(datetime.strptime("08:00", "%H:%M"), True)]
+        with patch('feeder_core.random.randint', side_effect=[-25, -20]):
+            self.assertEqual(apply_random_offset("09:00", 30, graze), "08:40")
+
+    def test_a_rolling_graze_keeps_clear_ahead(self):
+        # This slot is the graze: from 07:55 it would run into an 08:30 meal
+        meal = [(datetime.strptime("08:30", "%H:%M"), False)]
+        with patch('feeder_core.random.randint', side_effect=[-5, -20]):
+            self.assertEqual(apply_random_offset("08:00", 30, meal, graze=True), "07:40")
+
+
+class TestGrazeRules(unittest.TestCase):
+    def test_cutoffs(self):
+        import graze_rules
+        self.assertIsNone(graze_rules.midnight_problem("23:29", True))
+        self.assertIsNone(graze_rules.midnight_problem("22:59", False))
+        self.assertIn("before 11:30 PM", graze_rules.midnight_problem("23:30", True))
+        self.assertIn("Set this one to Fixed, or move it before 11:00 PM",
+                      graze_rules.midnight_problem("23:00", False))
+        # Past both cutoffs, Fixed wouldn't help, so it isn't offered
+        self.assertNotIn("Fixed", graze_rules.midnight_problem("23:45", False))
+
+    def test_cutoff_matches_the_run_time_midnight_check(self):
+        # The editor's limit and the feeder's all-at-once fallback must agree
+        import graze_rules
+        last = graze_rules.latest_graze_start(True)
+        start = datetime(2026, 11, 15, last // 60, last % 60, 59)
+        self.assertFalse(feeder_core.graze_crosses_midnight(start))
+        self.assertTrue(feeder_core.graze_crosses_midnight(start + timedelta(seconds=1)))
+
+    def test_spacing(self):
+        import graze_rules
+        entries = [{'time': '17:30', 'is_fixed': False, 'graze': True},
+                   {'time': '08:00', 'is_fixed': False, 'graze': False}]
+        self.assertIn("Too close to 5:30 PM", graze_rules.spacing_problem("18:05", False, entries))
+        self.assertIsNone(graze_rules.spacing_problem("18:10", False, entries))
+        # Two plain meals keep the old 10-minute rule, not this one
+        self.assertIsNone(graze_rules.spacing_problem("08:20", False, entries))
+        self.assertIn("8:00 AM", graze_rules.spacing_problem("08:20", True, entries))
+
+    def test_spacing_wraps_midnight(self):
+        import graze_rules
+        entries = [{'time': '23:50', 'is_fixed': True, 'graze': False}]
+        self.assertIn("11:50 PM", graze_rules.spacing_problem("00:10", True, entries))
 
 
 # Real log line shapes: every historical format plus the current schema
@@ -718,7 +763,9 @@ class TestScheduleRoutes(TempCwd):
                                 headers=self.json)
         rows = resp.get_json()['state']['schedule']
         self.assertEqual(rows, [{'base_time': '23:58', 'time': '11:58 PM',
-                                 'portion': 'large', 'is_fixed': True, 'graze': False}])
+                                 'portion': 'large', 'is_fixed': True, 'graze': False,
+                                 'graze_problem': 'A graze needs 30 minutes before midnight. '
+                                                  'Move it before 11:30 PM.'}])
         resp = self.client.post('/update_portion', data={'base_time': '23:58', 'portion': 'small'},
                                 headers=self.json)
         self.assertEqual(resp.get_json()['state']['schedule'][0]['portion'], 'small')
@@ -1658,6 +1705,77 @@ class TestGrazeRoute(TempCwd):
     def test_toggle_graze_unknown_time_is_404(self):
         resp = self.client.post('/toggle_graze', data={'base_time': '09:00'}, headers=self.json)
         self.assertEqual(resp.status_code, 404)
+
+    def _write(self, text):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write(text)
+
+    def _file(self):
+        with open('feeding_schedules.txt') as f:
+            return f.read()
+
+    def test_graze_past_midnight_cutoff_refused(self):
+        self._write("23:10,medium\n23:30,small,fixed\n")
+        for base_time in ('23:10', '23:30'):
+            resp = self.client.post('/toggle_graze', data={'base_time': base_time}, headers=self.json)
+            self.assertEqual(resp.status_code, 409, base_time)
+            self.assertIn("before midnight", resp.get_json()['message'])
+        self.assertEqual(self._file(), "23:10,medium\n23:30,small,fixed\n")
+
+    def test_fixed_graze_at_the_cutoff_allowed(self):
+        self._write("23:29,small,fixed\n")
+        resp = self.client.post('/toggle_graze', data={'base_time': '23:29'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._file(), "23:29,small,fixed,graze\n")
+
+    def test_late_fixed_graze_cant_go_back_to_varying(self):
+        self._write("23:15,small,fixed,graze\n")
+        resp = self.client.post('/toggle_fixed', data={'base_time': '23:15'}, headers=self.json)
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("before 11:00 PM", resp.get_json()['message'])
+        self.assertEqual(self._file(), "23:15,small,fixed,graze\n")
+
+    def test_graze_too_close_to_another_slot_refused(self):
+        self._write("17:30,medium\n18:00,small\n")
+        resp = self.client.post('/toggle_graze', data={'base_time': '17:30'}, headers=self.json)
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("Too close to 6:00 PM", resp.get_json()['message'])
+        self.assertEqual(self._file(), "17:30,medium\n18:00,small\n")
+
+    def test_add_too_close_to_a_graze_refused(self):
+        self._write("17:30,medium,graze\n")
+        resp = self.client.post('/add', data={'feeding_time': '17:55'}, headers=self.json)
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("Too close to 5:30 PM", resp.get_json()['message'])
+        resp = self.client.post('/add', data={'feeding_time': '18:10'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_rule_breaking_graze_saved_earlier_still_loads(self):
+        import web_interface
+        self._write("23:45,medium,graze\n")
+        self.assertEqual(self.client.get('/').status_code, 200)
+        (row,) = _api_state(web_interface)['schedule']
+        self.assertTrue(row['graze'])
+        self.assertIn("before midnight", row['graze_problem'])
+        self.assertEqual(self._file(), "23:45,medium,graze\n")
+        # It can always be turned off
+        resp = self.client.post('/toggle_graze', data={'base_time': '23:45'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._file(), "23:45,medium\n")
+
+    def test_editor_rows_say_which_can_graze(self):
+        import web_interface
+        self._write("08:00,small\n17:30,medium,graze\n17:50,small\n")
+        rows = {r['base_time']: r['graze_problem'] for r in _api_state(web_interface)['schedule']}
+        self.assertIsNone(rows['08:00'])
+        self.assertIn("Too close to 5:50 PM", rows['17:30'])
+        self.assertIn("Too close to 5:30 PM", rows['17:50'])
+
+    def test_daily_roll_steers_around_a_later_fixed_slot(self):
+        self._write("08:00,small\n08:20,small,fixed\n")
+        with patch('feeder_core.random.randint', side_effect=[15, -20]):
+            schedule_today = feeder_core.generate_todays_schedule()
+        self.assertEqual([s['actual_time'] for s in schedule_today], ['07:40', '08:20'])
 
     def test_cross_origin_toggle_graze_refused(self):
         with open('feeding_schedules.txt', 'w') as f:

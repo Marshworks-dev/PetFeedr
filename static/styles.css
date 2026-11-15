@@ -2006,6 +2006,19 @@ body:has(.sheet[open]) {
     color: var(--color-on-primary);
 }
 
+/* Can't graze here: reads as unavailable, but stays tappable to explain why */
+.graze-chip.is-blocked {
+    border-style: dashed;
+    text-decoration: line-through;
+}
+
+.sched-note {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+}
+
 .sched-row .btn-delete {
     min-width: 2rem;
     min-height: 2.25rem;
