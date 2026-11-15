@@ -2453,6 +2453,44 @@ class TestPasscodeGate(PasscodeCase):
             self.assertNotIn('--data', text, script)
 
 
+class TestShipWaitsForCI(unittest.TestCase):
+    """ship.sh's wait_for_ci, run against a stand-in `gh` on PATH."""
+
+    def _run(self, checks_appear_after):
+        import re, subprocess, tempfile
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'ship.sh')) as f:
+            fn = re.search(r'^wait_for_ci\(\) \{.*?^\}', f.read(), re.S | re.M).group(0)
+        tmp = tempfile.mkdtemp()
+        gh = os.path.join(tmp, 'gh')
+        with open(gh, 'w') as f:
+            # Reports 0 checks until called N times, like a PR whose CI run hasn't registered
+            f.write(f'''#!/bin/bash
+calls=$(( $(cat {tmp}/calls 2>/dev/null || echo 0) + 1 )); echo $calls > {tmp}/calls
+ready=$([ $calls -gt {checks_appear_after} ] && echo 1 || echo 0)
+case "$*" in
+  *--watch*) [ $ready = 1 ] || {{ echo "no checks reported" >&2; exit 1; }}; echo watched;;
+  *) echo $ready;;
+esac
+''')
+        os.chmod(gh, 0o700)
+        env = {**os.environ, 'PATH': tmp + os.pathsep + os.environ['PATH'],
+               'CI_POLL_SEC': '0', 'CI_POLL_TRIES': '5'}
+        return subprocess.run(['bash', '-c', fn + '\nwait_for_ci kibble'],
+                              env=env, capture_output=True, text=True)
+
+    def test_waits_for_a_late_ci_run_then_watches_it(self):
+        result = self._run(checks_appear_after=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('watched', result.stdout)
+
+    def test_gives_up_when_no_ci_run_ever_appears(self):
+        result = self._run(checks_appear_after=99)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('watched', result.stdout)
+        self.assertIn('no CI run appeared', result.stderr)
+
+
 def _private_terms(root):
     """Owner-specific terms (one regex per line) from the PRIVATE_TERMS env
     var (CI secret) or a gitignored .private-terms file. Never in the repo:

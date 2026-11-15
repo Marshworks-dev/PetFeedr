@@ -88,6 +88,20 @@ smoke() {
     echo "  no tracebacks since start ($since)"
 }
 
+# A PR opened seconds ago has no checks yet, and `gh pr checks --watch` reads
+# "no checks reported" as a failure. Wait for the run to show up first.
+CI_POLL_SEC="${CI_POLL_SEC:-5}"
+CI_POLL_TRIES="${CI_POLL_TRIES:-24}"
+wait_for_ci() {
+    local n=0
+    until [ "$(gh pr checks "$1" --json name -q length 2>/dev/null || echo 0)" -gt 0 ]; do
+        n=$((n + 1))
+        [ "$n" -lt "$CI_POLL_TRIES" ] || { echo "  no CI run appeared after $((CI_POLL_SEC * CI_POLL_TRIES))s" >&2; return 1; }
+        sleep "$CI_POLL_SEC"
+    done
+    gh pr checks "$1" --watch --fail-fast
+}
+
 if [ "${1:-}" = "--check" ]; then
     feed_guard
     smoke
@@ -140,7 +154,7 @@ else
     gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
 fi
 say "Waiting for CI"
-gh pr checks "$BRANCH" --watch --fail-fast || fail "CI failed — see the PR"
+wait_for_ci "$BRANCH" || fail "CI failed — see the PR"
 feed_guard  # CI took a while; re-check before the restart
 gh pr merge "$BRANCH" --merge --delete-branch
 git pull -q --ff-only origin main
