@@ -1,0 +1,321 @@
+"""Feeding-log parsing and consumption statistics.
+
+Pure stdlib — no Flask imports — so everything here is unit-testable.
+Parse functions accept an optional `lines` argument for tests; by
+default they read the live log files.
+"""
+
+import glob
+import re
+from datetime import datetime, timedelta
+
+# Cups per portion size — single source of truth (was duplicated 3x)
+PORTION_CUPS = {'small': 0.25, 'medium': 0.50, 'large': 0.75}
+
+# The "Feeding completed" line is the single record of a dispense — written
+# by trigger_servo on success, tagged with its source since the schema change:
+#   "2026-07-22 14:00:00,430 - INFO - Feeding completed in 0.31s (small portion, manual)"
+# One tolerant pattern family covers every historical shape: optional ,ms,
+# optional "LEVEL - ", optional "[SIM] ✅ " prefix, optional ", source"
+# suffix (absent → scheduled, matching pre-schema behavior). Legacy
+# "Manual feeding triggered" lines are deliberately not counted — each had a
+# companion completed line, so matching both would double-count.
+LOG_PREFIX = r'^(?P<date>\d{4}-\d{2}-\d{2}) (?P<time>\d{2}:\d{2}:\d{2})(?:,\d+)? - (?:\w+ - )?'
+COMPLETED_RE = re.compile(LOG_PREFIX +
+                          r'(?:\[SIM\] )?(?:✅ )?Feeding completed in [\d.]+s '
+                          r'\((?P<portion>\w+) portion(?:, (?P<source>\w+))?\)')
+# Feeds someone asked for on top of the schedule: from this page, or from
+# Porch (a household companion page, one small a day). Both count toward
+# the daily extras cap and show as manual in the stats
+EXTRA_SOURCES = ('manual', 'porch')
+# Failures are logged by feed_pet; parsed separately so they never count as food dispensed
+FAILED_RE = re.compile(LOG_PREFIX +
+                       r'Feeding failed \((?P<portion>\w+) portion, (?P<source>\w+)\)')
+
+
+def read_all_log_lines():
+    """Read lines from feeding_log.txt and all rotated copies (feeding_log.txt.YYYY-MM-DD)."""
+    lines = []
+    # rotated files are older, sort them so oldest come first
+    rotated = sorted(glob.glob('feeding_log.txt.*'))
+    for path in rotated:
+        try:
+            with open(path, 'r') as f:
+                lines.extend(f.readlines())
+        except (FileNotFoundError, OSError):
+            continue
+    # current log file has the newest entries
+    try:
+        with open('feeding_log.txt', 'r') as f:
+            lines.extend(f.readlines())
+    except FileNotFoundError:
+        pass
+    return lines
+
+
+def parse_recent_activity(days=14, limit=50, lines=None):
+    """Parse feeding log to extract recent activity in a user-friendly format."""
+    if lines is None:
+        lines = read_all_log_lines()
+    if not lines:
+        return []
+
+    activity = []
+    cutoff_date = datetime.now() - timedelta(days=days)
+
+    for line in reversed(lines):
+        match = COMPLETED_RE.match(line.strip())
+        if not match:
+            continue
+
+        try:
+            timestamp = datetime.strptime(
+                f"{match['date']} {match['time']}", "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+        if timestamp < cutoff_date:
+            break
+
+        activity.append({
+            'date': format_activity_date(timestamp),
+            'time': timestamp.strftime("%I:%M %p"),
+            'portion': match['portion'],
+            'type': match['source'] or 'scheduled'
+        })
+        if len(activity) >= limit:
+            break
+
+    return activity
+
+
+def format_activity_date(dt):
+    """Format a date for activity display (Today, Yesterday, or date)."""
+    today = datetime.now().date()
+    activity_date = dt.date()
+
+    if activity_date == today:
+        return "Today"
+    elif activity_date == today - timedelta(days=1):
+        return "Yesterday"
+    elif activity_date >= today - timedelta(days=6):
+        return dt.strftime("%A")  # Day name
+    else:
+        return dt.strftime("%b %d")  # "Jan 05"
+
+
+def parse_weekly_stats(lines=None):
+    """Aggregate feeding data for the last 7 days by portion size."""
+    if lines is None:
+        lines = read_all_log_lines()
+    if not lines:
+        return []
+
+    today = datetime.now().date()
+    stats = {}
+    for i in range(6, -1, -1):
+        d = today - timedelta(days=i)
+        stats[d.isoformat()] = {
+            'date': d.isoformat(),
+            'day_label': d.strftime('%a'),
+            'is_today': d == today,
+            'small': 0, 'medium': 0, 'large': 0,
+            'total_cups': 0.0,
+            'manual_count': 0,
+            'total_feedings': 0
+        }
+
+    for line in lines:
+        match = COMPLETED_RE.match(line.strip())
+        if match:
+            date_str, portion = match['date'], match['portion']
+            if date_str in stats and portion in PORTION_CUPS:
+                stats[date_str][portion] += 1
+                stats[date_str]['total_cups'] += PORTION_CUPS[portion]
+                stats[date_str]['total_feedings'] += 1
+                if match['source'] in EXTRA_SOURCES:
+                    stats[date_str]['manual_count'] += 1
+
+    return list(stats.values())
+
+
+def build_week_summary(weekly_stats):
+    """Build a one-line summary of the week's feeding activity."""
+    total_manual = sum(d['manual_count'] for d in weekly_stats)
+    total_feedings = sum(d['total_feedings'] for d in weekly_stats)
+    if total_feedings == 0:
+        return None
+    if total_manual == 0:
+        return "All feedings on schedule"
+    manual_label = "1 manual feed" if total_manual == 1 else f"{total_manual} manual feeds"
+    return f"{manual_label} this week"
+
+
+DEFAULT_CUPS_PER_LB = 4.0  # ~4 oz dry kibble per cup, until a weighed refill teaches the real ratio
+
+
+def calculate_consumption_rate(weekly_stats, cups_per_lb=None):
+    """Calculate consumption rate from weekly data. cups_per_lb: the hopper's
+    learned ratio (nominal cups dispensed per lb), None for the default."""
+    total_cups = sum(d['total_cups'] for d in weekly_stats)
+    days_with_data = sum(1 for d in weekly_stats if d['total_feedings'] > 0)
+    if days_with_data == 0:
+        return None
+    daily_avg = total_cups / days_with_data
+    weekly_avg = daily_avg * 7
+    monthly_avg = daily_avg * 30
+    lbs_per_cup = 1 / (cups_per_lb or DEFAULT_CUPS_PER_LB)
+    return {
+        'daily_cups': round(daily_avg, 2),
+        'daily_lbs': round(daily_avg * lbs_per_cup, 2),
+        'weekly_cups': round(weekly_avg, 1),
+        'weekly_lbs': round(weekly_avg * lbs_per_cup, 1),
+        'monthly_cups': round(monthly_avg, 1),
+        'monthly_lbs': round(monthly_avg * lbs_per_cup, 1),
+    }
+
+
+def calculate_daily_total(schedules):
+    """Calculate total cups per day from scheduled feedings."""
+    total_cups = 0
+    for sched in schedules:
+        if isinstance(sched, dict):
+            total_cups += PORTION_CUPS.get(sched.get('portion', 'small'), 0.25)
+    return total_cups
+
+
+def day_feedings(date_str, lines=None):
+    """Return (feedings, total_cups) for a specific date (YYYY-MM-DD)."""
+    if lines is None:
+        lines = read_all_log_lines()
+
+    feedings = []
+    for line in lines:
+        match = COMPLETED_RE.match(line.strip())
+        if match:
+            portion = match['portion']
+            if match['date'] == date_str and portion in PORTION_CUPS:
+                h, m, _ = match['time'].split(':')
+                hour = int(h)
+                time_12h = f"{hour % 12 or 12}:{m} {'AM' if hour < 12 else 'PM'}"
+                feedings.append({
+                    'time': time_12h,
+                    'portion': portion,
+                    'cups': PORTION_CUPS[portion],
+                    'type': match['source'] or 'scheduled'
+                })
+
+    total_cups = sum(f['cups'] for f in feedings)
+    return feedings, total_cups
+
+
+def _day_pct(hhmm):
+    """'HH:MM' (or 'HH:MM:SS') → position along a 24h axis, 0–100."""
+    h, m = hhmm.split(':')[:2]
+    return round((int(h) * 60 + int(m)) / 1440 * 100, 2)
+
+
+def _clock_12h(hhmm):
+    h, m = hhmm.split(':')[:2]
+    return f"{int(h) % 12 or 12}:{m} {'AM' if int(h) < 12 else 'PM'}"
+
+
+def rhythm_week(events, today, schedule_entries, upcoming_times=()):
+    """Seven rows (oldest → today) of feed marks on a 24h axis, from the event journal.
+
+    The daily cup total is near-constant on a fixed schedule, so a bar chart
+    of it is seven identical bars. *When* each feed landed is the signal:
+    on-schedule weeks line up into columns, and anything off — a manual
+    extra, a late catch-up, a miss — breaks the pattern visibly.
+
+    schedule_entries: schedule_store entries, drawn as guide bands (±30 min
+    wide when randomized). upcoming_times: today's not-yet-fed 'HH:MM' slots.
+    Mark kinds: fed, manual, late (has from_pct), missed, failed, upcoming.
+    """
+    start = today - timedelta(days=6)
+    days = {}
+    for i in range(7):
+        d = start + timedelta(days=i)
+        days[d.isoformat()] = {'date': d.isoformat(), 'is_today': d == today,
+                               'day_label': 'Today' if d == today else d.strftime('%a'),
+                               'total_cups': 0.0, 'marks': []}
+
+    for e in events:
+        day = days.get((e.get('ts') or '')[:10])
+        if day is None:
+            continue
+        ts_time = e['ts'][11:16]
+        portion = e.get('portion') or 'small'
+        scheduled_for = e.get('scheduled_for')
+        try:
+            if e.get('event') == 'dispense':
+                day['total_cups'] += e.get('cups') or PORTION_CUPS.get(portion, 0)
+                mark = {'kind': 'manual' if e.get('source') in EXTRA_SOURCES else 'fed',
+                        'pct': _day_pct(ts_time), 'portion': portion,
+                        'label': f"{_clock_12h(ts_time)} · {portion} · {e.get('source') or 'scheduled'}"}
+                if e.get('late_by_min') and scheduled_for:
+                    mark.update(kind='late', from_pct=_day_pct(scheduled_for),
+                                label=f"{_clock_12h(ts_time)} · {portion} · {e['late_by_min']} min late")
+            elif e.get('event') == 'missed' and scheduled_for:
+                mark = {'kind': 'missed', 'pct': _day_pct(scheduled_for), 'portion': portion,
+                        'label': f"{_clock_12h(scheduled_for)} · missed"}
+            elif e.get('event') == 'failure':
+                mark = {'kind': 'failed', 'pct': _day_pct(ts_time), 'portion': portion,
+                        'label': f"{_clock_12h(ts_time)} · dispense failed"}
+            else:
+                continue
+        except ValueError:  # a malformed time must not take the dashboard down
+            continue
+        day['marks'].append(mark)
+
+    today_row = days[today.isoformat()]
+    for t in upcoming_times:
+        today_row['marks'].append({'kind': 'upcoming', 'pct': _day_pct(t), 'portion': None,
+                                   'label': f"{_clock_12h(t)} · upcoming"})
+
+    for day in days.values():
+        day['marks'].sort(key=lambda m: m['pct'])
+        day['total_cups'] = round(day['total_cups'], 2)
+
+    # Randomized slots land anywhere in ±30 min, so their band shows that window
+    guides = []
+    for entry in schedule_entries:
+        half_window = 0 if entry['is_fixed'] else 30 / 1440 * 100
+        guides.append({'pct': _day_pct(entry['time']), 'half_width': round(half_window, 2)})
+
+    return {'days': list(days.values()), 'guides': guides}
+
+
+def on_time_summary(events, today):
+    """On-time streak and this week's record from the event journal.
+
+    Only schedule-driven events count (scheduled_for set). A day is good
+    when it has at least one scheduled dispense and nothing bad: no
+    failure, no miss, no late catch-up. Today counts once it has a feed;
+    an empty today (before the first slot) neither extends nor breaks.
+    """
+    by_day = {}
+    for e in events:
+        if not e.get('scheduled_for') or not e.get('ts'):
+            continue
+        day = by_day.setdefault(e['ts'][:10], {'on_time': 0, 'bad': 0})
+        if e.get('event') == 'dispense' and not e.get('late_by_min'):
+            day['on_time'] += 1
+        elif e.get('event') in ('dispense', 'failure', 'missed'):
+            day['bad'] += 1
+
+    streak = 0
+    d = today
+    if today.isoformat() not in by_day:
+        d = today - timedelta(days=1)
+    while True:
+        day = by_day.get(d.isoformat())
+        if not day or day['bad'] or not day['on_time']:
+            break
+        streak += 1
+        d -= timedelta(days=1)
+
+    week = [by_day.get((today - timedelta(days=i)).isoformat(), {'on_time': 0, 'bad': 0})
+            for i in range(7)]
+    on_time = sum(w['on_time'] for w in week)
+    return {'streak_days': streak, 'week_on_time': on_time,
+            'week_total': on_time + sum(w['bad'] for w in week)}
