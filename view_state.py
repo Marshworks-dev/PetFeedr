@@ -68,6 +68,21 @@ def _status_text(slot):
     return _STATUS_TEXT[slot['status']]
 
 
+def _trail_text(trail):
+    """A graze's progress in words, for the dot's label: the crumbs are
+    decoration to a screen reader."""
+    if not trail:
+        return ''
+    pulses, landed = trail['pulses'], trail['landed']
+    if trail['cut_short']:
+        return f"graze stopped after {landed} of {pulses} pulses"
+    if landed == pulses:
+        return f"grazed in {pulses} pulses"
+    if landed:
+        return f"graze, {landed} of {pulses} pulses so far"
+    return f"graze in {pulses} pulses"
+
+
 def _status_badge(slot):
     if slot['status'] == 'late':
         return f"+{slot['late_min']}m" if slot.get('late_min') else '+late'
@@ -103,6 +118,8 @@ def _timeline(ctx):
             'status': s['status'],
             'status_text': _status_text(s),
             'badge': _status_badge(s),
+            'trail': s.get('graze_trail'),
+            'trail_text': _trail_text(s.get('graze_trail')),
         })
     return {'start': start, 'end': end, 'hours': ctx['timeline_hours'], 'slots': slots}
 
@@ -137,7 +154,7 @@ def _stats_card(ctx):
     rhythm = ctx['rhythm']
     days = []
     for day in rhythm['days']:
-        fed = [m for m in day['marks'] if m['kind'] in ('fed', 'manual', 'late')]
+        fed = [m for m in day['marks'] if m['kind'] in ('fed', 'manual', 'late', 'grazed')]
         notes = ''.join(f"; {m['label']}" for m in day['marks'] if m['kind'] not in ('fed', 'upcoming'))
         days.append({
             'date': day['date'],

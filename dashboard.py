@@ -10,7 +10,7 @@ from feeder_core import load_todays_schedule, log, slot_outcome, todays_records
 from feeding_stats import (parse_recent_activity, parse_weekly_stats, build_week_summary,
                            calculate_consumption_rate, calculate_daily_total, on_time_summary,
                            rhythm_week)
-from servo_controller import PORTION_SIZES, GRAZE_SPAN_S
+from servo_controller import PORTION_SIZES, GRAZE_SPAN_S, graze_pulse_count
 import events
 import hopper
 import manual_limit
@@ -22,6 +22,12 @@ DUE_GRACE_MIN = 2
 # A running graze with no closing record this long after its expected end is
 # shown as fed, not grazing — the closing write failed, the food came out
 GRAZING_STALE_MIN = 5
+# A graze's trail of crumbs on Today's bar, in px past its head dot (lead +
+# gap per extra crumb, matching styles.css), and the narrowest bar it must
+# fit on (a 320px phone). Spacing is fixed, not to scale, so the bar's end is
+# padded to keep a late graze's trail on the bar.
+TRAIL_LEAD_PX, TRAIL_GAP_PX = 15, 7
+NARROWEST_BAR_PX = 250
 
 
 def read_schedules_with_details():
@@ -111,7 +117,40 @@ def attach_outcomes(schedules, now=None):
             s['grazing_until_12h'] = until.strftime("%I:%M %p").lstrip("0")
         s['status'] = status
         s['late_min'] = late_min
+        s['graze_trail'] = graze_trail(s, todays_events) if s.get('graze') else None
     return schedules
+
+
+def graze_trail(slot, todays_events):
+    """How far a graze slot has got: {'pulses', 'landed', 'cut_short'}, or
+    None when it fed all at once instead (the midnight fallback).
+
+    The pulse journal is the source: each pulse records itself as it lands,
+    and the closing dispense says whether the graze finished or stopped
+    early (partial). A failure after some pulses also stopped it early.
+    """
+    slot_events = [e for e in todays_events if e.get('scheduled_for') == slot['actual_time_24h']]
+    pulses = [e for e in slot_events if e.get('event') == 'graze_pulse']
+    dispense = next((e for e in slot_events if e.get('event') == 'dispense'), None)
+    if dispense and dispense.get('source') != 'graze':
+        return None
+    # The journal knows how many pulses this graze was cut into, even if the
+    # portion was edited since
+    count = pulses[-1].get('of') if pulses else None
+    count = count or graze_pulse_count(slot['portion'])
+    landed = max((e.get('pulse', 0) for e in pulses), default=0)
+    if dispense and dispense.get('partial'):
+        landed = dispense.get('pulses', landed)
+    elif dispense:
+        landed = count
+    failed = any(e.get('event') == 'failure' for e in slot_events)
+    cut_short = bool(dispense and dispense.get('partial')) or (failed and 0 < landed < count)
+    return {'pulses': count, 'landed': min(landed, count), 'cut_short': cut_short}
+
+
+def _trail_px(slot):
+    count = graze_pulse_count(slot['portion'])
+    return TRAIL_LEAD_PX + TRAIL_GAP_PX * max(0, count - 2)
 
 
 def grazing_until(actual_time, todays_events, now):
@@ -145,13 +184,21 @@ def build_timeline(schedules):
         times_min = [s['time_minutes'] for s in schedules]
         timeline_start = max(0, min(times_min) - 60)
         timeline_end = min(1439, max(times_min) + 60)
+        # A graze's trail must end on the bar: its share of the bar's width
+        # (on the narrowest phone) is a share of the minutes it spans. A late
+        # graze may run the bar a little past midnight to fit.
+        for s in schedules:
+            if s.get('graze'):
+                share = _trail_px(s) / NARROWEST_BAR_PX
+                needed = (s['time_minutes'] - share * timeline_start) / (1 - share)
+                timeline_end = max(timeline_end, round(needed) + 5)
     else:
         timeline_start, timeline_end = 360, 1320  # 6AM-10PM default
 
     timeline_hours = []
     first_hour = ((timeline_start // 60) + 1) * 60
     for mins in range(first_hour, timeline_end, 60):
-        h = mins // 60
+        h = mins // 60 % 24  # a bar padded past midnight labels 12AM, 2AM
         pct = ((mins - timeline_start) / (timeline_end - timeline_start)) * 100
         show_label = (h % 2 == 0)
         label = f"{h % 12 or 12}{'AM' if h < 12 else 'PM'}" if show_label else None
@@ -210,7 +257,8 @@ def index_context():
         'weekly_stats': weekly_stats,
         'rhythm': rhythm_week(
             all_events, date.today(), schedule_store.read_entries(),
-            [s['actual_time_24h'] for s in schedules if s['status'] in ('upcoming', 'due')]),
+            [s['actual_time_24h'] for s in schedules if s['status'] in ('upcoming', 'due')],
+            pulse_count=graze_pulse_count),
         'week_summary': build_week_summary(weekly_stats),
         'consumption': consumption,
         'hopper': hopper_card(consumption),

@@ -18,8 +18,48 @@ function dotContent(slot) {
         <div class="timeline-tooltip">
             ${slot.time}<br>
             <span class="portion-${slot.portion}">${slot.portion}</span>${slot.is_fixed ? ' 🔒' : ''}<br>
+            ${slot.trail_text ? html`<span class="tooltip-trail">${slot.trail_text}</span><br>` : ''}
             <span class="tooltip-status">${slot.status_text}</span>
         </div>`;
+}
+
+// A graze's trail: one crumb per pulse after the first, filled once that
+// pulse has landed, and a ✕ where a graze stopped early. Spaced evenly, not
+// to scale (30 minutes is a few pixels), so its length shows the pulse count.
+export function crumbsMarkup(trail) {
+    const crumbs = [];
+    for (let i = 1; i < trail.pulses; i++) {
+        if (trail.cut_short && i === trail.landed) {
+            crumbs.push(html`<span class="crumb stopped" style="--i: ${i - 1};"></span>`);
+            break;
+        }
+        crumbs.push(html`<span class="crumb ${i < trail.landed ? 'landed' : ''}" style="--i: ${i - 1};"></span>`);
+    }
+    return html`${crumbs}`;
+}
+
+function renderTrail(bar, slot, dot) {
+    let trail = $(`.trail[data-key="${slot.key}"]`, bar);
+    if (!slot.trail) {
+        trail?.remove();
+        return;
+    }
+    if (!trail) {
+        trail = document.createElement('div');
+        trail.dataset.key = slot.key;
+        trail.setAttribute('aria-hidden', 'true');
+        dot.after(trail);
+    }
+    const wasLanded = Number(trail.dataset.landed ?? slot.trail.landed);
+    trail.className = `trail portion-${slot.portion}`;
+    trail.style.setProperty('--dot-pos', `${slot.pct}%`);
+    trail.dataset.landed = slot.trail.landed;
+    setHTML(trail, crumbsMarkup(slot.trail));
+    // A pulse landed since the last refresh: pop the crumb it filled
+    for (let i = wasLanded; i < slot.trail.landed; i++) {
+        const crumb = $$('.crumb', trail)[i - 1];
+        if (crumb) animate(crumb, [{ scale: 0.3 }, { scale: 1.6 }, { scale: 1 }], { duration: 450 });
+    }
 }
 
 function renderHours(container, hours) {
@@ -56,8 +96,10 @@ function renderDots(bar, slots) {
         dot.className = dotClass(slot, dot.classList.contains('active'));
         dot.dataset.status = slot.status;
         dot.style.setProperty('--dot-pos', `${slot.pct}%`);
-        dot.setAttribute('aria-label', `${slot.time}, ${slot.portion} portion, ${slot.status_text}`);
+        dot.setAttribute('aria-label', [slot.time, `${slot.portion} portion`, slot.trail_text, slot.status_text]
+            .filter(Boolean).join(', '));
         setHTML(dot, dotContent(slot));
+        renderTrail(bar, slot, dot);
         if (isNew) {
             animate(dot, [{ opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1 }], { duration: 300 });
         } else if (wasStatus !== slot.status) {
@@ -67,6 +109,7 @@ function renderDots(bar, slots) {
         existing.delete(slot.key);
     }
     for (const stale of existing.values()) {
+        $(`.trail[data-key="${stale.dataset.key}"]`, bar)?.remove();
         animate(stale, [{ opacity: 1 }, { opacity: 0, scale: 0.4 }], { duration: 200 })
             .then(() => stale.remove());
     }

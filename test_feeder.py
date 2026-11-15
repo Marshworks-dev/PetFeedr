@@ -1251,6 +1251,36 @@ class TestRhythmWeek(unittest.TestCase):
     def _ev(ts, kind='dispense', **kw):
         return {'ts': ts, 'event': kind, **kw}
 
+    def test_graze_sits_at_its_start_with_a_trail(self):
+        from servo_controller import graze_pulse_count
+        evs = [self._ev('2026-09-29T18:30:05', portion='medium', cups=0.5, source='graze',
+                        scheduled_for='18:00'),
+               self._ev('2026-09-28T18:20:00', portion='medium', cups=0.375, source='graze',
+                        scheduled_for='18:00', partial=True, pulses=3)]
+        r = feeding_stats.rhythm_week(evs, self.TODAY, self.ENTRIES, pulse_count=graze_pulse_count)
+        (done,) = r['days'][-1]['marks']
+        self.assertEqual((done['kind'], done['pct']), ('grazed', feeding_stats._day_pct('18:00')))
+        self.assertEqual((done['pulses'], done['landed'], done['cut_short']), (4, 4, False))
+        self.assertEqual(done['label'], '6:00 PM · medium · grazed')
+        (stopped,) = r['days'][-2]['marks']
+        self.assertEqual((stopped['landed'], stopped['cut_short']), (3, True))
+        self.assertIn('stopped after 3 of 4', stopped['label'])
+
+    def test_late_graze_keeps_its_tail(self):
+        from servo_controller import graze_pulse_count
+        evs = [self._ev('2026-09-29T19:10:00', portion='small', cups=0.25, source='graze',
+                        scheduled_for='18:00', late_by_min=40)]
+        (mark,) = feeding_stats.rhythm_week(evs, self.TODAY, self.ENTRIES,
+                                            pulse_count=graze_pulse_count)['days'][-1]['marks']
+        self.assertEqual(mark['pct'], feeding_stats._day_pct('18:40'))
+        self.assertEqual(mark['from_pct'], feeding_stats._day_pct('18:00'))
+
+    def test_graze_without_a_pulse_count_draws_as_fed(self):
+        evs = [self._ev('2026-09-29T18:30:05', portion='medium', cups=0.5, source='graze',
+                        scheduled_for='18:00')]
+        (mark,) = feeding_stats.rhythm_week(evs, self.TODAY, self.ENTRIES)['days'][-1]['marks']
+        self.assertEqual(mark['kind'], 'fed')
+
     def test_marks_land_on_the_right_day_and_time(self):
         evs = [self._ev('2026-09-29T06:00:01', portion='small', cups=0.25, source='scheduled'),
                self._ev('2026-09-28T12:00:00', portion='large', cups=0.75, source='manual'),
@@ -1342,6 +1372,69 @@ class TestDashboardExtras(TempCwd):
         self.assertEqual(len(state['stats']['guides']), len(slots))
 
 
+class TestGrazeTrail(unittest.TestCase):
+    SLOT = {'actual_time_24h': '17:30', 'portion': 'medium'}
+
+    @staticmethod
+    def _ev(kind, **kw):
+        return {'ts': '2026-11-15T17:30:00', 'event': kind, 'scheduled_for': '17:30', **kw}
+
+    def _trail(self, *evs, slot=None):
+        import dashboard
+        return dashboard.graze_trail(slot or self.SLOT, list(evs))
+
+    def test_upcoming_running_and_finished(self):
+        self.assertEqual(self._trail(), {'pulses': 4, 'landed': 0, 'cut_short': False})
+        pulses = [self._ev('graze_pulse', pulse=i, of=4) for i in (1, 2)]
+        self.assertEqual(self._trail(*pulses)['landed'], 2)
+        done = self._trail(*pulses, self._ev('dispense', source='graze'))
+        self.assertEqual(done, {'pulses': 4, 'landed': 4, 'cut_short': False})
+
+    def test_stopped_early(self):
+        pulses = [self._ev('graze_pulse', pulse=i, of=4) for i in (1, 2, 3)]
+        partial = self._ev('dispense', source='graze', partial=True, pulses=3)
+        self.assertEqual(self._trail(*pulses, partial), {'pulses': 4, 'landed': 3, 'cut_short': True})
+        failed = self._trail(pulses[0], self._ev('failure', source='graze'))
+        self.assertTrue(failed['cut_short'])
+        # Failing on the first pulse is a failed slot, not a cut-short trail
+        self.assertFalse(self._trail(self._ev('failure', source='graze'))['cut_short'])
+
+    def test_fed_all_at_once_has_no_trail(self):
+        # The midnight fallback feeds a graze slot whole
+        self.assertIsNone(self._trail(self._ev('dispense', source='scheduled')))
+
+    def test_journal_count_wins_over_an_edited_portion(self):
+        pulses = [self._ev('graze_pulse', pulse=1, of=6)]
+        self.assertEqual(self._trail(*pulses, slot={**self.SLOT, 'portion': 'small'})['pulses'], 6)
+
+    def test_other_slots_events_are_ignored(self):
+        other = {**self._ev('graze_pulse', pulse=3, of=4), 'scheduled_for': '08:00'}
+        self.assertEqual(self._trail(other)['landed'], 0)
+
+    def test_bar_end_pads_for_a_late_graze(self):
+        import dashboard
+        def slots(graze, portion='large'):
+            return [{'actual_time_24h': '06:00', 'graze': False, 'portion': 'small'},
+                    {'actual_time_24h': '20:00', 'graze': graze, 'portion': portion}]
+        _, plain_end, _ = dashboard.build_timeline(slots(False))
+        self.assertEqual(plain_end, 21 * 60)
+        start, end, _ = dashboard.build_timeline(slots(True))
+        # The large trail's px on the narrowest bar fit between the slot and the end
+        trail_share = (dashboard.TRAIL_LEAD_PX + 4 * dashboard.TRAIL_GAP_PX) / dashboard.NARROWEST_BAR_PX
+        self.assertGreaterEqual((end - 20 * 60) / (end - start), trail_share)
+        # A late graze runs the bar past midnight rather than off its end,
+        # and the hour labels wrap
+        late = [{'actual_time_24h': '06:00', 'graze': False, 'portion': 'small'},
+                {'actual_time_24h': '23:20', 'graze': True, 'portion': 'large'}]
+        start, end, hours = dashboard.build_timeline(late)
+        self.assertGreaterEqual((end - (23 * 60 + 20)) / (end - start), trail_share)
+        self.assertIn('12AM', [h['label'] for h in hours])
+        # A plain last slot keeps the old cap
+        _, plain_late, _ = dashboard.build_timeline([{'actual_time_24h': '23:20', 'graze': False,
+                                                      'portion': 'large'}])
+        self.assertEqual(plain_late, 1439)
+
+
 class TestGrazingDisplay(TempCwd):
     """A running graze reads as grazing on the dashboard; the feeder still sees it handled."""
 
@@ -1381,6 +1474,14 @@ class TestGrazingDisplay(TempCwd):
         today = self.now.date()
         self.assertEqual(feeder_core.slot_outcome(self.slot, today, *feeder_core.todays_records(today)),
                          ('fed', None))
+
+    def test_trail_reads_on_the_dot(self):
+        import web_interface
+        self._write(self._ev('graze_pulse', self.slot_dt, pulse=1, of=4),
+                    self._ev('graze_pulse', self.slot_dt, pulse=2, of=4))
+        slot = _api_state(web_interface)['timeline']['slots'][0]
+        self.assertEqual(slot['trail'], {'pulses': 4, 'landed': 2, 'cut_short': False})
+        self.assertEqual(slot['trail_text'], 'graze, 2 of 4 pulses so far')
 
     def test_finished_graze_reads_fed_and_clears_the_note(self):
         import web_interface

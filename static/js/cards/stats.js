@@ -5,6 +5,7 @@
 import { $, $$, html, setHTML } from '../dom.js';
 import { fetchDayDetail } from '../api.js';
 import { onTick, minutesOfDay } from '../ticker.js';
+import { crumbsMarkup } from './timeline.js';
 
 let selectedDate = null;
 
@@ -17,9 +18,10 @@ function rowMarkup(day, guides) {
                 ${guides.map(g => html`<span class="rhythm-guide" style="--pct: ${g.pct}; --half: ${g.half_width};"></span>`)}
                 ${day.is_today ? html`<span class="rhythm-now" id="rhythm-now"></span>` : ''}
                 ${day.marks.map(m => html`
-                    ${m.kind === 'late' ? html`<span class="rhythm-late-tail" style="--from: ${m.from_pct}; --pct: ${m.pct};"></span>` : ''}
+                    ${m.from_pct != null ? html`<span class="rhythm-late-tail" style="--from: ${m.from_pct}; --pct: ${m.pct};"></span>` : ''}
                     <span class="rhythm-mark mark-${m.kind} ${m.portion ? `size-${m.portion}` : ''}"
-                          style="--pct: ${m.pct};" title="${m.label}"></span>`)}
+                          style="--pct: ${m.pct};" title="${m.label}"></span>
+                    ${m.kind === 'grazed' ? html`<span class="trail size-${m.portion}" style="--pct: ${m.pct};">${crumbsMarkup(m)}</span>` : ''}`)}
             </div>
             <span class="rhythm-cups">${day.cups_short}</span>
         </div>`;
@@ -28,6 +30,7 @@ function rowMarkup(day, guides) {
 const LEGEND = html`
     <div class="rhythm-legend" aria-hidden="true">
         <span><i class="rhythm-mark mark-fed"></i>fed</span>
+        <span><span class="legend-trail"><i></i><i></i><i></i><i></i></span>grazed</span>
         <span><i class="rhythm-mark mark-manual"></i>manual</span>
         <span><i class="rhythm-mark mark-late"></i>late</span>
         <span><i class="rhythm-mark mark-missed"></i>missed</span>

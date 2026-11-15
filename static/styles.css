@@ -711,6 +711,63 @@ body {
     background: linear-gradient(to top, var(--dot-fill, var(--color-primary)) 50%, var(--color-surface) 50%);
 }
 
+/* A graze's trail: one crumb per pulse after the first, filled once it has
+   landed. Evenly spaced, not to scale; dashboard.TRAIL_*_PX mirror these */
+.trail {
+    position: absolute;
+    left: var(--dot-pos);
+    top: 50%;
+    height: 0;
+    z-index: 2;
+    pointer-events: none;
+    --gap: 7px;
+    --lead: 12px;
+    --size: 6px;
+    --fill: var(--color-primary);
+}
+
+.trail.portion-small  { --fill: var(--color-portion-small); }
+.trail.portion-medium { --fill: var(--color-portion-medium); }
+.trail.portion-large  { --fill: var(--color-portion-large); }
+
+.crumb {
+    position: absolute;
+    top: 0;
+    left: calc(var(--gap) * var(--i) + var(--lead));
+    width: var(--size);
+    height: var(--size);
+    box-sizing: border-box;
+    border-radius: 40%;
+    transform: translate(-50%, -50%) rotate(var(--tilt, 0deg));
+    border: 1.5px solid var(--fill);
+    background: var(--color-surface);
+    transition: background-color 0.25s ease;
+}
+
+.trail .crumb:nth-child(odd)  { --tilt: 18deg; }
+.trail .crumb:nth-child(even) { --tilt: -12deg; }
+
+.crumb.landed {
+    background: var(--fill);
+}
+
+.crumb.stopped {
+    width: auto;
+    height: auto;
+    border: none;
+    background: none;
+    color: var(--color-danger);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.crumb.stopped::before { content: '✕'; }
+
+.tooltip-trail {
+    opacity: 0.85;
+}
+
 .dot-badge {
     position: absolute;
     bottom: calc(100% + 3px);
@@ -1079,6 +1136,37 @@ body {
 .mark-fed      { background: var(--color-primary); }
 .mark-manual   { background: var(--color-surface); border: 2px solid var(--color-accent-dark); }
 .mark-late     { background: var(--color-warning); }
+.mark-grazed   { background: var(--color-primary); }
+
+.rhythm-track .trail {
+    left: calc(var(--pct) * 1%);
+    --gap: 5px;
+    --size: 4px;
+    --lead: 8px;
+}
+
+.rhythm-track .trail.size-medium { --lead: 9px; }
+.rhythm-track .trail.size-large  { --lead: 11px; }
+.rhythm-track .crumb { border-radius: 50%; }
+
+.legend-trail {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.legend-trail i {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: var(--color-primary);
+}
+
+.legend-trail i:first-child {
+    width: 9px;
+    height: 9px;
+    margin-right: 1px;
+}
 .mark-upcoming {
     width: 10px;
     height: 10px;

@@ -219,7 +219,7 @@ def _clock_12h(hhmm):
     return f"{int(h) % 12 or 12}:{m} {'AM' if int(h) < 12 else 'PM'}"
 
 
-def rhythm_week(events, today, schedule_entries, upcoming_times=()):
+def rhythm_week(events, today, schedule_entries, upcoming_times=(), pulse_count=None):
     """Seven rows (oldest → today) of feed marks on a 24h axis, from the event journal.
 
     The daily cup total is near-constant on a fixed schedule, so a bar chart
@@ -229,7 +229,12 @@ def rhythm_week(events, today, schedule_entries, upcoming_times=()):
 
     schedule_entries: schedule_store entries, drawn as guide bands (±30 min
     wide when randomized). upcoming_times: today's not-yet-fed 'HH:MM' slots.
-    Mark kinds: fed, manual, late (has from_pct), missed, failed, upcoming.
+    pulse_count: portion → pulses in a graze (servo_controller's), so this
+    module stays free of hardware imports; without it grazes draw as fed.
+    Mark kinds: fed, manual, late (has from_pct), grazed, missed, failed,
+    upcoming. A grazed mark sits where the graze started, not where it
+    finished, and carries pulses, landed and cut_short for its trail; a late
+    one also has from_pct.
     """
     start = today - timedelta(days=6)
     days = {}
@@ -252,7 +257,9 @@ def rhythm_week(events, today, schedule_entries, upcoming_times=()):
                 mark = {'kind': 'manual' if e.get('source') in EXTRA_SOURCES else 'fed',
                         'pct': _day_pct(ts_time), 'portion': portion,
                         'label': f"{_clock_12h(ts_time)} · {portion} · {e.get('source') or 'scheduled'}"}
-                if e.get('late_by_min') and scheduled_for:
+                if e.get('source') == 'graze' and pulse_count and scheduled_for:
+                    mark = _grazed_mark(e, portion, scheduled_for, pulse_count(portion))
+                elif e.get('late_by_min') and scheduled_for:
                     mark.update(kind='late', from_pct=_day_pct(scheduled_for),
                                 label=f"{_clock_12h(ts_time)} · {portion} · {e['late_by_min']} min late")
             elif e.get('event') == 'missed' and scheduled_for:
@@ -283,6 +290,23 @@ def rhythm_week(events, today, schedule_entries, upcoming_times=()):
         guides.append({'pct': _day_pct(entry['time']), 'half_width': round(half_window, 2)})
 
     return {'days': list(days.values()), 'guides': guides}
+
+
+def _grazed_mark(e, portion, scheduled_for, count):
+    """A graze's mark at its start: the slot time, plus how late it began."""
+    h, m = scheduled_for.split(':')
+    start_min = (int(h) * 60 + int(m) + (e.get('late_by_min') or 0)) % 1440
+    start = f"{start_min // 60:02d}:{start_min % 60:02d}"
+    landed = e.get('pulses', count) if e.get('partial') else count
+    label = f"{_clock_12h(start)} · {portion} · grazed"
+    if e.get('partial'):
+        label += f", stopped after {landed} of {count}"
+    mark = {'kind': 'grazed', 'pct': _day_pct(start), 'portion': portion, 'label': label,
+            'pulses': count, 'landed': landed, 'cut_short': bool(e.get('partial'))}
+    if e.get('late_by_min'):
+        mark['from_pct'] = _day_pct(scheduled_for)
+        mark['label'] += f", {e['late_by_min']} min late"
+    return mark
 
 
 def on_time_summary(events, today):
