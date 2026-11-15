@@ -120,16 +120,50 @@ def _timeline(ctx):
             'badge': _status_badge(s),
             'trail': s.get('graze_trail'),
             'trail_text': _trail_text(s.get('graze_trail')),
+            **_clips(s.get('clip_events', []), s['actual_time_12h']),
         })
     # Manual and Porch feeds: their own nodes, so a feed by hand has
     # somewhere to land on the bar
     extras = [{'key': x['key'], 'time': x['time_12h'], 'portion': x['portion'],
                'pct': round((x['time_minutes'] - start) / span * 100, 3) if span > 0 else 50,
                'label': f"{x['time_12h']}, extra {x['portion']} feed"
-                        + (' from the porch' if x['source'] == 'porch' else '')}
+                        + (' from the porch' if x['source'] == 'porch' else ''),
+               **_clips([{'ts': x['ts'], 'event': 'dispense'}], x['time_12h'])}
               for x in ctx.get('timeline_extras', [])]
     return {'start': start, 'end': end, 'hours': ctx['timeline_hours'], 'slots': slots,
             'extras': extras}
+
+
+def _clips(feed_events, time_12h, now=None):
+    """The saved clips of a feed's events, for the timeline:
+    {'clips': [{'id', 'title', 'frames', 'landed'}], 'clip_note': str|None}.
+    The note says why a feed that happened has no clip to show."""
+    if not camera.enabled() or not feed_events:
+        return {'clips': [], 'clip_note': None}
+    now = now or datetime.now()
+    clips, newest = [], None
+    for e in feed_events:
+        try:
+            clip_id = camera.clip_id_for(e['ts'])
+            at = datetime.fromisoformat(e['ts'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        newest = max(newest, at) if newest else at
+        info = camera.clip_info(clip_id)
+        if not info:
+            continue
+        title = f"{time_12h} feed"
+        if e.get('event') == 'graze_pulse' and e.get('of'):
+            title = f"{time_12h} graze, pulse {e.get('pulse')} of {e['of']}"
+        clips.append({'id': clip_id, 'title': title, **info})
+    note = None
+    if newest and (now - newest).total_seconds() <= camera.CLIP_AFTER_S + 2 * camera.WATCH_EVERY_S + 5:
+        note = 'Saving the clip…'   # its window hasn't closed yet
+    elif not clips:
+        note = 'No clip for this feed'
+    elif len(clips) < len(feed_events):
+        note = 'Some pulses have no clip'
+    return {'clips': clips, 'clip_note': note}
 
 
 def _schedule_rows(ctx):

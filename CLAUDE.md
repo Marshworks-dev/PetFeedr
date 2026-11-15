@@ -34,7 +34,8 @@ hopper.py                 # Hopper level tracking; learns capacity from refill f
 notify.py                 # Pushover alerts (PUSHOVER_TOKEN/PUSHOVER_USER env; fail-soft)
 passcode.py               # Household passcode: hash + unlock tokens in data/passcode.json, growing waits on wrong guesses
 lock_routes.py            # Blueprint: /unlock, /lock, /passcode, and the gate in front of every write
-camera.py                 # Bowl webcam: one long-running ffmpeg stream; a frame every 5 min to data/frames/ (14 days)
+camera.py                 # Bowl webcam: one long-running ffmpeg stream; a frame every 5 min to data/frames/,
+                          #   a clip of every dispense/graze pulse to data/clips/ (both 14 days)
 servo_controller.py       # Motor control: portion sizes, dispense cycles, anti-jam agitation
 DRV8825.py                # GPIO abstraction; falls back to mock_gpio.py off-Pi only
 mock_gpio.py              # Simulation stub for RPi.GPIO
@@ -73,6 +74,9 @@ Key invariants:
 - **The camera stays off the feed path.** camera.py never takes
   `STATE_LOCK` or imports feeder_core, and no feed module imports it
   (a test pins both). `/camera/latest.jpg` takes no filename from the request.
+  Clips come from camera.py watching `feeding_events.jsonl`, never from a
+  call on the feed path. `/camera/clips/<id>/<n>.jpg` reaches a file only
+  through `camera.clip_frame_path`, which checks both parts.
 - **The camera stream is started once and left running.** This webcam jams
   when a stream starts after an earlier one stopped, so camera.py restarts
   it only when it has died or stalled. Don't add per-shot captures.

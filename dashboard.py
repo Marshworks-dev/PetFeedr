@@ -118,7 +118,16 @@ def attach_outcomes(schedules, now=None):
         s['status'] = status
         s['late_min'] = late_min
         s['graze_trail'] = graze_trail(s, todays_events) if s.get('graze') else None
+        s['clip_events'] = clip_events(s['actual_time_24h'], todays_events)
     return schedules
+
+
+def clip_events(actual_time, todays_events):
+    """A slot's events that the camera saves a clip of: its dispense, or each
+    pulse of a graze (the graze's closing dispense has no clip of its own)."""
+    return [e for e in todays_events if e.get('scheduled_for') == actual_time and e.get('ts')
+            and (e.get('event') == 'graze_pulse'
+                 or (e.get('event') == 'dispense' and e.get('source') != 'graze'))]
 
 
 def graze_trail(slot, todays_events):
@@ -176,7 +185,7 @@ def grazing_until(actual_time, todays_events, now):
 
 def todays_extras(today=None):
     """Today's manual and Porch feeds, oldest first, for Today's bar:
-    [{'key', 'time_minutes', 'time_12h', 'portion', 'source'}]."""
+    [{'key', 'ts', 'time_minutes', 'time_12h', 'portion', 'source'}]."""
     today = today or date.today()
     extras = []
     for e in events.read_all():
@@ -188,7 +197,7 @@ def todays_extras(today=None):
             at = datetime.fromisoformat(ts)
         except ValueError:  # a malformed line must not take the dashboard down
             continue
-        extras.append({'key': f"extra-{ts}", 'time_minutes': at.hour * 60 + at.minute,
+        extras.append({'key': f"extra-{ts}", 'ts': ts, 'time_minutes': at.hour * 60 + at.minute,
                        'time_12h': at.strftime("%I:%M %p").lstrip("0"),
                        'portion': e.get('portion') or 'small', 'source': e['source']})
     return extras

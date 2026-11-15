@@ -20,6 +20,7 @@ const PRECACHE = [
     '/static/js/cards/hopper.js',
     '/static/js/cards/feedpanel.js',
     '/static/js/cards/camera.js',
+    '/static/js/cards/clips.js',
     '/static/js/cards/lock.js',
     '/static/js/cards/sheet.js',
     '/static/js/cards/footer.js',

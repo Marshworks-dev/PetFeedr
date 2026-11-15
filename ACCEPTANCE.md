@@ -30,6 +30,8 @@ watches feeding_events.jsonl, the same journal the feeds already write.
 - [test] The top panel's picture is the stream's newest frame from memory
       (seconds old), refreshed on each poll. The 5-minute saved frames are
       unchanged.
+- [check] A screen left open and untouched for 10 minutes stops fetching
+      new pictures and says so on the picture; the next tap brings it back.
 - [check] On the phone: tap a past feed on the timeline, the clip plays,
       and food can be seen landing. Feeds with no clip say so plainly.
 - [check] The flipbook has a pause control, and with reduced motion it

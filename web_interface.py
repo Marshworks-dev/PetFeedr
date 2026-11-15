@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse
-from flask import Flask, request, render_template, jsonify, send_file
+from flask import Flask, Response, request, render_template, jsonify, send_file
 
 import camera
 from feeder_core import feed_pet, STATE_LOCK, log, setup_logging
@@ -120,15 +120,34 @@ def day_detail(date_str):
 
 @app.route('/camera/latest.jpg')
 def camera_latest():
-    """The newest bowl frame. Read-only, and nothing in the request picks the
-    file: the path is fixed and the frame is chosen here, so there is no
-    filename to traverse with."""
-    path = camera.latest_frame()
-    if not path:
-        return error_response('No camera frame yet', 404)
-    # abspath: send_file resolves relative paths against the app folder, not the cwd
-    response = send_file(os.path.abspath(path), mimetype='image/jpeg')
+    """The newest bowl picture: straight off the running stream when it is
+    delivering, else the newest saved frame. Read-only, and nothing in the
+    request picks the file: the path is fixed and the frame is chosen here,
+    so there is no filename to traverse with."""
+    live = camera.live_frame()
+    if live:
+        response = Response(live[0], mimetype='image/jpeg')
+    else:
+        path = camera.latest_frame()
+        if not path:
+            return error_response('No camera frame yet', 404)
+        # abspath: send_file resolves relative paths against the app folder, not the cwd
+        response = send_file(os.path.abspath(path), mimetype='image/jpeg')
     response.headers['Cache-Control'] = 'no-cache'
+    return response
+
+
+@app.route('/camera/clips/<clip_id>/<int:index>.jpg')
+def camera_clip_frame(clip_id, index):
+    """One frame of a feed clip. camera.clip_frame_path checks the clip name
+    against its exact format and the index against the clip's frame count;
+    anything else is a 404, so no request path reaches the filesystem."""
+    path = camera.clip_frame_path(clip_id, index)
+    if not path:
+        return error_response('No such clip frame', 404)
+    response = send_file(os.path.abspath(path), mimetype='image/jpeg')
+    # A saved clip never changes
+    response.headers['Cache-Control'] = 'private, max-age=86400, immutable'
     return response
 
 
