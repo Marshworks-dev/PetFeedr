@@ -1,6 +1,6 @@
 # PetFeedr's new look: Kibble
 
-Status: approved
+Status: shipped
 
 Intent: PetFeedr looks like a MarshWorks product of its own. It uses the
 warm "Kibble" look picked on the canvas: cream and espresso, with the
@@ -20,7 +20,7 @@ fonts change. Dark mode is drawn to match, not just inverted.
       latin subsets with their OFL texts, preloaded and precached. Baloo 2
       and DM Sans are removed. The existing "nothing off-box" and
       "every precached file is served" tests still pass.
-- [check] Header: the bowl-from-above mark next to a "PetFeedr" wordmark
+- [check] Header: the P mark next to a "PetFeedr" wordmark
       in Fredoka, with the lock and theme buttons as 44px round buttons.
 - [check] The camera hero matches the canvas: the next-feeding bar sits on
       espresso above the bowl picture, and the "x min ago" chip sits in
