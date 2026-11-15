@@ -459,6 +459,11 @@ body {
     display: none;
 }
 
+/* On its way out: taps go through to the page */
+.feed-panel[data-closing] {
+    pointer-events: none;
+}
+
 /* The caret that ties the panel to the hopper above it */
 .feed-panel::before {
     content: '';
