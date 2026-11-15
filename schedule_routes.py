@@ -11,6 +11,7 @@ from feeder_core import (load_todays_schedule, save_todays_schedule, slot_outcom
                          apply_random_offset, resync_today, STATE_LOCK, log)
 from responses import error_response, success_response
 from servo_controller import PORTION_SIZES, DEFAULT_PORTION
+import graze_rules
 import schedule_store
 
 # Blueprint: keeps this group in its own file while URLs stay unchanged
@@ -31,8 +32,9 @@ def replace_today_entry(base_time, portion, is_fixed, graze=False):
     if is_fixed:
         actual_time = base_time
     else:
-        existing_times = [datetime.strptime(s['actual_time'], "%H:%M") for s in todays_schedule]
-        actual_time = apply_random_offset(base_time, 30, existing_times)
+        busy = [(datetime.strptime(s['actual_time'], "%H:%M"), s.get('graze', False))
+                for s in todays_schedule]
+        actual_time = apply_random_offset(base_time, graze_rules.VARY_MIN, busy, graze)
     todays_schedule.append({
         'base_time': base_time,
         'actual_time': actual_time,
@@ -64,6 +66,9 @@ def add_job():
             entries = schedule_store.read_entries()
             if any(e['time'] == feeding_time for e in entries):
                 return error_response('Feeding time already exists', 409)
+            problem = graze_rules.spacing_problem(feeding_time, False, entries)
+            if problem:
+                return error_response(problem, 409)
             entries.append({'time': feeding_time, 'portion': portion, 'is_fixed': is_fixed})
             schedule_store.write_entries(entries)
             actual_time = replace_today_entry(feeding_time, portion, is_fixed)
@@ -112,6 +117,11 @@ def toggle_fixed():
             target = next((e for e in entries if e['time'] == base_time), None)
             if target is None:
                 return error_response('Feeding time not found', 404)
+            # Fixed → ±30 lets a graze roll half an hour later, past midnight
+            problem = target['is_fixed'] and target['graze'] and \
+                graze_rules.midnight_problem(base_time, is_fixed=False)
+            if problem:
+                return error_response(problem, 409)
             target['is_fixed'] = not target['is_fixed']
             schedule_store.write_entries(entries)
             todays_schedule = load_todays_schedule() or []
@@ -146,6 +156,10 @@ def toggle_graze():
             target = next((e for e in entries if e['time'] == base_time), None)
             if target is None:
                 return error_response('Feeding time not found', 404)
+            # Turning a graze off is always allowed, even one saved before the rules
+            problem = not target['graze'] and graze_rules.graze_problem(target, entries)
+            if problem:
+                return error_response(problem, 409)
             target['graze'] = not target['graze']
             schedule_store.write_entries(entries)
 

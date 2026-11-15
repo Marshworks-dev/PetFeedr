@@ -54,29 +54,74 @@ class TestApplyRandomOffset(unittest.TestCase):
         with patch('feeder_core.random.randint', return_value=-30):
             self.assertEqual(apply_random_offset("00:10", 30, []), "00:10")
 
-    def test_forward_past_midnight_wraps(self):
-        # Quirk pinned: a forward offset can cross midnight and produce an
-        # early-morning time ("00:20") rather than clamping.
-        with patch('feeder_core.random.randint', return_value=30):
-            self.assertEqual(apply_random_offset("23:50", 30, []), "00:20")
+    def test_forward_past_midnight_clamps_to_base(self):
+        # A forward roll from 23:45 used to land at 00:05, before the day's
+        # earlier meals
+        with patch('feeder_core.random.randint', return_value=20):
+            self.assertEqual(apply_random_offset("23:45", 30, []), "23:45")
 
     def test_conflict_avoidance_retries(self):
         # First offset lands within 10 min of an existing time, second is clear.
-        existing = [datetime.strptime("08:15", "%H:%M")]
+        existing = [(datetime.strptime("08:15", "%H:%M"), False)]
         with patch('feeder_core.random.randint', side_effect=[10, -20]):
             self.assertEqual(apply_random_offset("08:00", 30, existing), "07:40")
 
-    def test_exact_collision_allowed(self):
-        # Quirk pinned: "diff > 0" in the conflict check means landing on
-        # exactly the same minute as another feeding is NOT a conflict.
-        existing = [datetime.strptime("08:15", "%H:%M")]
-        with patch('feeder_core.random.randint', return_value=15):
-            self.assertEqual(apply_random_offset("08:00", 30, existing), "08:15")
+    def test_exact_collision_is_a_conflict(self):
+        existing = [(datetime.strptime("08:15", "%H:%M"), False)]
+        with patch('feeder_core.random.randint', side_effect=[15, -20]):
+            self.assertEqual(apply_random_offset("08:00", 30, existing), "07:40")
 
     def test_gives_up_after_ten_tries(self):
-        existing = [datetime.strptime("08:03", "%H:%M")]
+        existing = [(datetime.strptime("08:03", "%H:%M"), False)]
         with patch('feeder_core.random.randint', return_value=5):
             self.assertEqual(apply_random_offset("08:00", 30, existing), "08:00")
+
+    def test_graze_is_busy_for_its_whole_span(self):
+        # A graze from 08:00 runs to 08:30: 08:35 is inside its buffer, 08:40 clear
+        graze = [(datetime.strptime("08:00", "%H:%M"), True)]
+        with patch('feeder_core.random.randint', side_effect=[-25, -20]):
+            self.assertEqual(apply_random_offset("09:00", 30, graze), "08:40")
+
+    def test_a_rolling_graze_keeps_clear_ahead(self):
+        # This slot is the graze: from 07:55 it would run into an 08:30 meal
+        meal = [(datetime.strptime("08:30", "%H:%M"), False)]
+        with patch('feeder_core.random.randint', side_effect=[-5, -20]):
+            self.assertEqual(apply_random_offset("08:00", 30, meal, graze=True), "07:40")
+
+
+class TestGrazeRules(unittest.TestCase):
+    def test_cutoffs(self):
+        import graze_rules
+        self.assertIsNone(graze_rules.midnight_problem("23:29", True))
+        self.assertIsNone(graze_rules.midnight_problem("22:59", False))
+        self.assertIn("before 11:30 PM", graze_rules.midnight_problem("23:30", True))
+        self.assertIn("Set this one to Fixed, or move it before 11:00 PM",
+                      graze_rules.midnight_problem("23:00", False))
+        # Past both cutoffs, Fixed wouldn't help, so it isn't offered
+        self.assertNotIn("Fixed", graze_rules.midnight_problem("23:45", False))
+
+    def test_cutoff_matches_the_run_time_midnight_check(self):
+        # The editor's limit and the feeder's all-at-once fallback must agree
+        import graze_rules
+        last = graze_rules.latest_graze_start(True)
+        start = datetime(2026, 11, 15, last // 60, last % 60, 59)
+        self.assertFalse(feeder_core.graze_crosses_midnight(start))
+        self.assertTrue(feeder_core.graze_crosses_midnight(start + timedelta(seconds=1)))
+
+    def test_spacing(self):
+        import graze_rules
+        entries = [{'time': '17:30', 'is_fixed': False, 'graze': True},
+                   {'time': '08:00', 'is_fixed': False, 'graze': False}]
+        self.assertIn("Too close to 5:30 PM", graze_rules.spacing_problem("18:05", False, entries))
+        self.assertIsNone(graze_rules.spacing_problem("18:10", False, entries))
+        # Two plain meals keep the old 10-minute rule, not this one
+        self.assertIsNone(graze_rules.spacing_problem("08:20", False, entries))
+        self.assertIn("8:00 AM", graze_rules.spacing_problem("08:20", True, entries))
+
+    def test_spacing_wraps_midnight(self):
+        import graze_rules
+        entries = [{'time': '23:50', 'is_fixed': True, 'graze': False}]
+        self.assertIn("11:50 PM", graze_rules.spacing_problem("00:10", True, entries))
 
 
 # Real log line shapes: every historical format plus the current schema
@@ -718,7 +763,9 @@ class TestScheduleRoutes(TempCwd):
                                 headers=self.json)
         rows = resp.get_json()['state']['schedule']
         self.assertEqual(rows, [{'base_time': '23:58', 'time': '11:58 PM',
-                                 'portion': 'large', 'is_fixed': True, 'graze': False}])
+                                 'portion': 'large', 'is_fixed': True, 'graze': False,
+                                 'graze_problem': 'A graze needs 30 minutes before midnight. '
+                                                  'Move it before 11:30 PM.'}])
         resp = self.client.post('/update_portion', data={'base_time': '23:58', 'portion': 'small'},
                                 headers=self.json)
         self.assertEqual(resp.get_json()['state']['schedule'][0]['portion'], 'small')
@@ -828,6 +875,15 @@ class TestKibbleLook(unittest.TestCase):
         # Breaker: yellow text on cream is the mistake this guards against
         self.assertLess(_contrast('#f2b632', '#faf4ea'), 4.5)
         self.assertAlmostEqual(_contrast('#000000', '#ffffff'), 21.0, places=1)
+
+    def test_toasts_follow_an_open_dialog(self):
+        # A modal <dialog> covers the page and makes it inert: a toast left
+        # outside the schedule sheet was neither seen nor announced
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/toast.js')) as f:
+            body = f.read()
+        self.assertIn("document.querySelector('dialog[open]')", body)
+        self.assertIn('host.appendChild(container)', body)
 
     def test_old_teal_and_coral_are_gone(self):
         here = os.path.dirname(os.path.abspath(__file__))
@@ -1195,6 +1251,36 @@ class TestRhythmWeek(unittest.TestCase):
     def _ev(ts, kind='dispense', **kw):
         return {'ts': ts, 'event': kind, **kw}
 
+    def test_graze_sits_at_its_start_with_a_trail(self):
+        from servo_controller import graze_pulse_count
+        evs = [self._ev('2026-09-29T18:30:05', portion='medium', cups=0.5, source='graze',
+                        scheduled_for='18:00'),
+               self._ev('2026-09-28T18:20:00', portion='medium', cups=0.375, source='graze',
+                        scheduled_for='18:00', partial=True, pulses=3)]
+        r = feeding_stats.rhythm_week(evs, self.TODAY, self.ENTRIES, pulse_count=graze_pulse_count)
+        (done,) = r['days'][-1]['marks']
+        self.assertEqual((done['kind'], done['pct']), ('grazed', feeding_stats._day_pct('18:00')))
+        self.assertEqual((done['pulses'], done['landed'], done['cut_short']), (4, 4, False))
+        self.assertEqual(done['label'], '6:00 PM · medium · grazed')
+        (stopped,) = r['days'][-2]['marks']
+        self.assertEqual((stopped['landed'], stopped['cut_short']), (3, True))
+        self.assertIn('stopped after 3 of 4', stopped['label'])
+
+    def test_late_graze_keeps_its_tail(self):
+        from servo_controller import graze_pulse_count
+        evs = [self._ev('2026-09-29T19:10:00', portion='small', cups=0.25, source='graze',
+                        scheduled_for='18:00', late_by_min=40)]
+        (mark,) = feeding_stats.rhythm_week(evs, self.TODAY, self.ENTRIES,
+                                            pulse_count=graze_pulse_count)['days'][-1]['marks']
+        self.assertEqual(mark['pct'], feeding_stats._day_pct('18:40'))
+        self.assertEqual(mark['from_pct'], feeding_stats._day_pct('18:00'))
+
+    def test_graze_without_a_pulse_count_draws_as_fed(self):
+        evs = [self._ev('2026-09-29T18:30:05', portion='medium', cups=0.5, source='graze',
+                        scheduled_for='18:00')]
+        (mark,) = feeding_stats.rhythm_week(evs, self.TODAY, self.ENTRIES)['days'][-1]['marks']
+        self.assertEqual(mark['kind'], 'fed')
+
     def test_marks_land_on_the_right_day_and_time(self):
         evs = [self._ev('2026-09-29T06:00:01', portion='small', cups=0.25, source='scheduled'),
                self._ev('2026-09-28T12:00:00', portion='large', cups=0.75, source='manual'),
@@ -1286,6 +1372,208 @@ class TestDashboardExtras(TempCwd):
         self.assertEqual(len(state['stats']['guides']), len(slots))
 
 
+class TestGrazeTrail(unittest.TestCase):
+    SLOT = {'actual_time_24h': '17:30', 'portion': 'medium'}
+
+    @staticmethod
+    def _ev(kind, **kw):
+        return {'ts': '2026-11-15T17:30:00', 'event': kind, 'scheduled_for': '17:30', **kw}
+
+    def _trail(self, *evs, slot=None):
+        import dashboard
+        return dashboard.graze_trail(slot or self.SLOT, list(evs))
+
+    def test_upcoming_running_and_finished(self):
+        self.assertEqual(self._trail(), {'pulses': 4, 'landed': 0, 'cut_short': False})
+        pulses = [self._ev('graze_pulse', pulse=i, of=4) for i in (1, 2)]
+        self.assertEqual(self._trail(*pulses)['landed'], 2)
+        done = self._trail(*pulses, self._ev('dispense', source='graze'))
+        self.assertEqual(done, {'pulses': 4, 'landed': 4, 'cut_short': False})
+
+    def test_stopped_early(self):
+        pulses = [self._ev('graze_pulse', pulse=i, of=4) for i in (1, 2, 3)]
+        partial = self._ev('dispense', source='graze', partial=True, pulses=3)
+        self.assertEqual(self._trail(*pulses, partial), {'pulses': 4, 'landed': 3, 'cut_short': True})
+        failed = self._trail(pulses[0], self._ev('failure', source='graze'))
+        self.assertTrue(failed['cut_short'])
+        # Failing on the first pulse is a failed slot, not a cut-short trail
+        self.assertFalse(self._trail(self._ev('failure', source='graze'))['cut_short'])
+
+    def test_fed_all_at_once_has_no_trail(self):
+        # The midnight fallback feeds a graze slot whole
+        self.assertIsNone(self._trail(self._ev('dispense', source='scheduled')))
+
+    def test_journal_count_wins_over_an_edited_portion(self):
+        pulses = [self._ev('graze_pulse', pulse=1, of=6)]
+        self.assertEqual(self._trail(*pulses, slot={**self.SLOT, 'portion': 'small'})['pulses'], 6)
+
+    def test_other_slots_events_are_ignored(self):
+        other = {**self._ev('graze_pulse', pulse=3, of=4), 'scheduled_for': '08:00'}
+        self.assertEqual(self._trail(other)['landed'], 0)
+
+    def test_bar_end_pads_for_a_late_graze(self):
+        import dashboard
+        def slots(graze, portion='large'):
+            return [{'actual_time_24h': '06:00', 'graze': False, 'portion': 'small'},
+                    {'actual_time_24h': '20:00', 'graze': graze, 'portion': portion}]
+        _, plain_end, _ = dashboard.build_timeline(slots(False))
+        self.assertEqual(plain_end, 21 * 60)
+        start, end, _ = dashboard.build_timeline(slots(True))
+        # The large trail's px on the narrowest bar fit between the slot and the end
+        trail_share = (dashboard.TRAIL_LEAD_PX + 4 * dashboard.TRAIL_GAP_PX) / dashboard.NARROWEST_BAR_PX
+        self.assertGreaterEqual((end - 20 * 60) / (end - start), trail_share)
+        # A late graze runs the bar past midnight rather than off its end,
+        # and the hour labels wrap
+        late = [{'actual_time_24h': '06:00', 'graze': False, 'portion': 'small'},
+                {'actual_time_24h': '23:20', 'graze': True, 'portion': 'large'}]
+        start, end, hours = dashboard.build_timeline(late)
+        self.assertGreaterEqual((end - (23 * 60 + 20)) / (end - start), trail_share)
+        self.assertIn('12AM', [h['label'] for h in hours])
+        # A plain last slot keeps the old cap
+        _, plain_late, _ = dashboard.build_timeline([{'actual_time_24h': '23:20', 'graze': False,
+                                                      'portion': 'large'}])
+        self.assertEqual(plain_late, 1439)
+
+
+def _element_html(page, element_id, tag=None):
+    """The markup inside one element, found by id (or the first `tag`),
+    following real nesting: a stray close tag ends it where a browser would."""
+    from html.parser import HTMLParser
+    voids = {'meta', 'link', 'img', 'input', 'br', 'hr', 'source'}
+
+    class Finder(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.depth = None
+            self.start = self.end = None
+
+        def handle_starttag(self, name, attrs):
+            if name in voids:
+                return
+            if self.depth is None and (dict(attrs).get('id') == element_id if element_id else name == tag):
+                self.depth, self.start = 0, self.getpos()
+            if self.depth is not None and self.end is None:
+                self.depth += 1
+
+        def handle_endtag(self, name):
+            if name in voids or self.depth is None or self.end is not None:
+                return
+            self.depth -= 1
+            if self.depth == 0:
+                self.end = self.getpos()
+
+    finder = Finder()
+    finder.feed(page)
+    lines = page.split('\n')
+    (l1, c1), (l2, c2) = finder.start, finder.end
+    if l1 == l2:
+        return lines[l1 - 1][c1:c2]
+    return '\n'.join([lines[l1 - 1][c1:]] + lines[l1:l2 - 1] + [lines[l2 - 1][:c2]])
+
+
+class TestShipGrazeGuard(unittest.TestCase):
+    def test_guard_covers_the_whole_graze(self):
+        # It was hardcoded to 21 minutes; grazes went to 30 and the guard didn't follow
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = os.path.join(here, 'ship.sh')
+        with open(script) as f:
+            body = f.read()
+        self.assertNotRegex(body, r'GRAZE_GUARD_MIN=\d')
+        guard = body[body.index('GRAZE_SPAN_S=$('):body.index('GRAZE_GUARD_MIN=$((')]
+        import subprocess
+        # $0 is "bash" here, so the script's dirname is the working directory
+        out = subprocess.run(['bash', '-c', guard + 'echo "$GRAZE_SPAN_S"'], cwd=here,
+                             capture_output=True, text=True)
+        from servo_controller import GRAZE_SPAN_S
+        self.assertEqual(out.stdout.strip(), str(GRAZE_SPAN_S))
+
+
+class TestHopperPanel(TempCwd):
+    """The hopper in the header is the feed button; Today's bar shows extras."""
+
+    def setUp(self):
+        super().setUp()
+        import web_interface
+        self.web = web_interface
+        self.client = web_interface.app.test_client()
+
+    def _events(self, *evs):
+        with open('feeding_events.jsonl', 'w') as f:
+            f.writelines(json.dumps(e) + '\n' for e in evs)
+
+    def test_extras_show_on_todays_bar(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("08:00,small,fixed\n18:00,small,fixed\n")
+        today = date.today().isoformat()
+        self._events({'ts': f'{today}T12:05:00', 'event': 'dispense', 'source': 'manual', 'portion': 'small'},
+                     {'ts': f'{today}T13:40:00', 'event': 'dispense', 'source': 'porch', 'portion': 'small'},
+                     {'ts': f'{today}T08:00:02', 'event': 'dispense', 'source': 'scheduled', 'portion': 'small'},
+                     {'ts': '2001-01-01T12:00:00', 'event': 'dispense', 'source': 'manual', 'portion': 'large'},
+                     {'ts': 'not a time', 'event': 'dispense', 'source': 'manual'})
+        timeline = _api_state(self.web)['timeline']
+        self.assertEqual([x['label'] for x in timeline['extras']],
+                         ['12:05 PM, extra small feed', '1:40 PM, extra small feed from the porch'])
+        self.assertTrue(all(0 < x['pct'] < 100 for x in timeline['extras']))
+        self.assertEqual(len({x['key'] for x in timeline['extras']}), 2)
+
+    def test_an_extra_outside_the_schedule_widens_the_bar(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("12:00,small,fixed\n")
+        self._events({'ts': f'{date.today().isoformat()}T05:30:00', 'event': 'dispense',
+                      'source': 'manual', 'portion': 'small'})
+        timeline = _api_state(self.web)['timeline']
+        self.assertLessEqual(timeline['start'], 5 * 60 + 30)
+        self.assertGreaterEqual(timeline['extras'][0]['pct'], 0)
+
+    def test_no_extras_is_an_empty_list(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("12:00,small,fixed\n")
+        self.assertEqual(_api_state(self.web)['timeline']['extras'], [])
+
+    def test_feed_and_hopper_cards_moved_into_the_panel(self):
+        page = self.client.get('/').get_data(as_text=True)
+        self.assertNotIn('feed-card', page)
+        self.assertNotIn('hopper-card', page)
+        self.assertIn('aria-controls="feed-panel"', page)
+        self.assertIn('aria-expanded="false"', page)
+        panel = _element_html(page, 'feed-panel')
+        # It drops from the header, so it lives inside it
+        self.assertIn('id="feed-panel"', _element_html(page, None, tag='header'))
+        for control in ('feed-circle-btn', 'id="feed-portions"', 'id="extras-chip"', 'id="grazing-note"',
+                        'id="hopper-body"', 'refill-form', 'id="refill-toggle"'):
+            self.assertIn(control, panel)
+        # Hidden until the hopper is tapped; the Feed button stays inert until feed.js loads
+        self.assertIn('id="feed-panel" hidden', page)
+        self.assertIn('class="feed-circle-btn" disabled', page)
+
+    def test_every_module_is_precached(self):
+        # A module the service worker doesn't cache breaks the app offline
+        import re
+        here = os.path.dirname(os.path.abspath(__file__))
+        sw = self.client.get('/sw.js').get_data(as_text=True)
+        cached = set(re.findall(r"'(/static/js/[^']+)'", sw))
+        for root, _, files in os.walk(os.path.join(here, 'static', 'js')):
+            for name in files:
+                rel = '/' + os.path.relpath(os.path.join(root, name), here).replace(os.sep, '/')
+                self.assertIn(rel, cached, f'{rel} is not precached')
+
+    def test_learning_hopper_shows_no_bare_question_mark(self):
+        # Before the first refill there's no level; a lone "?" told nobody anything
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/cards/hopper.js')) as f:
+            body = f.read()
+        self.assertIn('badge.hidden = Boolean(hopper.learning)', body)
+        self.assertNotIn("'?'", body)
+
+    def test_pour_only_follows_a_change_and_respects_reduced_motion(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/pour.js')) as f:
+            body = f.read()
+        # The first state is the baseline: nothing pours on load
+        self.assertIn('if (previous) {', body)
+        self.assertIn('reducedMotion() || document.hidden', body)
+
+
 class TestGrazingDisplay(TempCwd):
     """A running graze reads as grazing on the dashboard; the feeder still sees it handled."""
 
@@ -1293,8 +1581,8 @@ class TestGrazingDisplay(TempCwd):
         super().setUp()
         self.now = datetime.now().replace(second=0, microsecond=0)
         self.slot_dt = self.now - timedelta(minutes=10)
-        # The graze runs 20 minutes from its slot; that must end today too
-        if self.slot_dt.date() != (self.slot_dt + timedelta(minutes=20)).date():
+        # The graze runs 30 minutes from its slot; that must end today too
+        if self.slot_dt.date() != (self.slot_dt + timedelta(minutes=30)).date():
             self.skipTest("too close to midnight")
         self.slot = self.slot_dt.strftime("%H:%M")
         with open('feeding_schedules.txt', 'w') as f:
@@ -1311,7 +1599,7 @@ class TestGrazingDisplay(TempCwd):
             f.writelines(json.dumps(e) + '\n' for e in evs)
 
     def _until_12h(self):
-        return (self.slot_dt + timedelta(minutes=20)).strftime("%I:%M %p").lstrip("0")
+        return (self.slot_dt + timedelta(minutes=30)).strftime("%I:%M %p").lstrip("0")
 
     def test_running_graze_shows_grazing_on_timeline_and_feed_card(self):
         import web_interface
@@ -1326,10 +1614,18 @@ class TestGrazingDisplay(TempCwd):
         self.assertEqual(feeder_core.slot_outcome(self.slot, today, *feeder_core.todays_records(today)),
                          ('fed', None))
 
+    def test_trail_reads_on_the_dot(self):
+        import web_interface
+        self._write(self._ev('graze_pulse', self.slot_dt, pulse=1, of=4),
+                    self._ev('graze_pulse', self.slot_dt, pulse=2, of=4))
+        slot = _api_state(web_interface)['timeline']['slots'][0]
+        self.assertEqual(slot['trail'], {'pulses': 4, 'landed': 2, 'cut_short': False})
+        self.assertEqual(slot['trail_text'], 'graze, 2 of 4 pulses so far')
+
     def test_finished_graze_reads_fed_and_clears_the_note(self):
         import web_interface
         self._write(self._ev('graze_pulse', self.slot_dt, pulse=1, of=4),
-                    self._ev('dispense', self.slot_dt + timedelta(minutes=20), source='graze', cups=0.5))
+                    self._ev('dispense', self.slot_dt + timedelta(minutes=30), source='graze', cups=0.5))
         state = _api_state(web_interface)
         self.assertEqual(state['timeline']['slots'][0]['status'], 'fed')
         self.assertEqual(state['feed']['grazing_label'], '')
@@ -1346,7 +1642,7 @@ class TestGrazingDisplay(TempCwd):
     def test_graze_with_no_closing_record_stops_showing_after_its_span(self):
         import dashboard
         pulse = self._ev('graze_pulse', self.slot_dt, pulse=1, of=4)
-        end = self.slot_dt + timedelta(minutes=20)
+        end = self.slot_dt + timedelta(minutes=30)
         self.assertEqual(dashboard.grazing_until(self.slot, [pulse], end), end)
         late = end + timedelta(minutes=dashboard.GRAZING_STALE_MIN + 1)
         self.assertIsNone(dashboard.grazing_until(self.slot, [pulse], late))
@@ -1486,7 +1782,7 @@ class TestGraze(TempCwd):
             self.assertTrue(feeder_core.run_graze('medium', '17:30', '17:30', sleep=fake_sleep))
 
         self.assertEqual(jiggles, [True, False, True, False])
-        self.assertEqual(sleeps, [400.0, 400.0, 400.0])  # first pulse at the slot, last at +20 min
+        self.assertEqual(sleeps, [600.0, 600.0, 600.0])  # first pulse at the slot, last at +30 min
         self.assertEqual(lock_free, [True, True, True])
         completed = [l for l in logs.output if 'Feeding completed' in l]
         self.assertEqual(len(completed), 1)
@@ -1557,7 +1853,7 @@ class TestGraze(TempCwd):
         self.assertEqual(feeder_core.slot_outcome('17:30', self.today, [], lines), ('fed', None))
 
     def test_scheduled_graze_starts_in_background(self):
-        # Pinned: the real check reads the clock, and after 23:40 any graze crosses midnight
+        # Pinned: the real check reads the clock, and after 23:30 any graze crosses midnight
         with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed, \
              patch('feeder_core.graze_crosses_midnight', return_value=False):
             self.assertTrue(feeder_core.scheduled_feed('large', '17:30', '17:34', graze=True))
@@ -1587,7 +1883,7 @@ class TestGraze(TempCwd):
     def test_graze_crossing_midnight_is_detected(self):
         d = self.today
         self.assertTrue(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:50", "%H:%M").time())))
-        self.assertFalse(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:39", "%H:%M").time())))
+        self.assertFalse(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:29", "%H:%M").time())))
 
     def test_late_graze_slot_feeds_all_at_once(self):
         # Pulses after midnight would mark tomorrow's 23:50 as fed — every other day unfed
@@ -1649,6 +1945,77 @@ class TestGrazeRoute(TempCwd):
     def test_toggle_graze_unknown_time_is_404(self):
         resp = self.client.post('/toggle_graze', data={'base_time': '09:00'}, headers=self.json)
         self.assertEqual(resp.status_code, 404)
+
+    def _write(self, text):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write(text)
+
+    def _file(self):
+        with open('feeding_schedules.txt') as f:
+            return f.read()
+
+    def test_graze_past_midnight_cutoff_refused(self):
+        self._write("23:10,medium\n23:30,small,fixed\n")
+        for base_time in ('23:10', '23:30'):
+            resp = self.client.post('/toggle_graze', data={'base_time': base_time}, headers=self.json)
+            self.assertEqual(resp.status_code, 409, base_time)
+            self.assertIn("before midnight", resp.get_json()['message'])
+        self.assertEqual(self._file(), "23:10,medium\n23:30,small,fixed\n")
+
+    def test_fixed_graze_at_the_cutoff_allowed(self):
+        self._write("23:29,small,fixed\n")
+        resp = self.client.post('/toggle_graze', data={'base_time': '23:29'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._file(), "23:29,small,fixed,graze\n")
+
+    def test_late_fixed_graze_cant_go_back_to_varying(self):
+        self._write("23:15,small,fixed,graze\n")
+        resp = self.client.post('/toggle_fixed', data={'base_time': '23:15'}, headers=self.json)
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("before 11:00 PM", resp.get_json()['message'])
+        self.assertEqual(self._file(), "23:15,small,fixed,graze\n")
+
+    def test_graze_too_close_to_another_slot_refused(self):
+        self._write("17:30,medium\n18:00,small\n")
+        resp = self.client.post('/toggle_graze', data={'base_time': '17:30'}, headers=self.json)
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("Too close to 6:00 PM", resp.get_json()['message'])
+        self.assertEqual(self._file(), "17:30,medium\n18:00,small\n")
+
+    def test_add_too_close_to_a_graze_refused(self):
+        self._write("17:30,medium,graze\n")
+        resp = self.client.post('/add', data={'feeding_time': '17:55'}, headers=self.json)
+        self.assertEqual(resp.status_code, 409)
+        self.assertIn("Too close to 5:30 PM", resp.get_json()['message'])
+        resp = self.client.post('/add', data={'feeding_time': '18:10'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+
+    def test_rule_breaking_graze_saved_earlier_still_loads(self):
+        import web_interface
+        self._write("23:45,medium,graze\n")
+        self.assertEqual(self.client.get('/').status_code, 200)
+        (row,) = _api_state(web_interface)['schedule']
+        self.assertTrue(row['graze'])
+        self.assertIn("before midnight", row['graze_problem'])
+        self.assertEqual(self._file(), "23:45,medium,graze\n")
+        # It can always be turned off
+        resp = self.client.post('/toggle_graze', data={'base_time': '23:45'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(self._file(), "23:45,medium\n")
+
+    def test_editor_rows_say_which_can_graze(self):
+        import web_interface
+        self._write("08:00,small\n17:30,medium,graze\n17:50,small\n")
+        rows = {r['base_time']: r['graze_problem'] for r in _api_state(web_interface)['schedule']}
+        self.assertIsNone(rows['08:00'])
+        self.assertIn("Too close to 5:50 PM", rows['17:30'])
+        self.assertIn("Too close to 5:30 PM", rows['17:50'])
+
+    def test_daily_roll_steers_around_a_later_fixed_slot(self):
+        self._write("08:00,small\n08:20,small,fixed\n")
+        with patch('feeder_core.random.randint', side_effect=[15, -20]):
+            schedule_today = feeder_core.generate_todays_schedule()
+        self.assertEqual([s['actual_time'] for s in schedule_today], ['07:40', '08:20'])
 
     def test_cross_origin_toggle_graze_refused(self):
         with open('feeding_schedules.txt', 'w') as f:
@@ -2451,6 +2818,46 @@ class TestPasscodeGate(PasscodeCase):
             text = (repo / script).read_text()
             self.assertNotIn('-X POST', text, script)
             self.assertNotIn('--data', text, script)
+
+
+class TestShipWaitsForCI(unittest.TestCase):
+    """ship.sh's wait_for_ci, run against a stand-in `gh` on PATH."""
+
+    def _run(self, checks_appear_after):
+        import re, subprocess, tempfile
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'ship.sh')) as f:
+            fn = re.search(r'^wait_for_ci\(\) \{.*?^\}', f.read(), re.S | re.M).group(0)
+        import shutil
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        gh = os.path.join(tmp, 'gh')
+        with open(gh, 'w') as f:
+            # Reports 0 checks until called N times, like a PR whose CI run hasn't registered
+            f.write(f'''#!/bin/bash
+calls=$(( $(cat "{tmp}/calls" 2>/dev/null || echo 0) + 1 )); echo $calls > "{tmp}/calls"
+ready=$([ $calls -gt {checks_appear_after} ] && echo 1 || echo 0)
+case "$*" in
+  *--watch*) [ $ready = 1 ] || {{ echo "no checks reported" >&2; exit 1; }}; echo watched;;
+  *) echo $ready;;
+esac
+''')
+        os.chmod(gh, 0o700)
+        env = {**os.environ, 'PATH': tmp + os.pathsep + os.environ['PATH'],
+               'CI_POLL_SEC': '0', 'CI_POLL_TRIES': '5'}
+        return subprocess.run(['bash', '-c', fn + '\nwait_for_ci kibble'],
+                              env=env, capture_output=True, text=True)
+
+    def test_waits_for_a_late_ci_run_then_watches_it(self):
+        result = self._run(checks_appear_after=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('watched', result.stdout)
+
+    def test_gives_up_when_no_ci_run_ever_appears(self):
+        result = self._run(checks_appear_after=99)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn('watched', result.stdout)
+        self.assertIn('no CI run appeared', result.stderr)
 
 
 def _private_terms(root):

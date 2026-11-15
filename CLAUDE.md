@@ -25,6 +25,7 @@ web_interface.py          # Flask app: index, feed (manual cap + cooldown), refi
 schedule_routes.py        # Blueprint: add/delete/toggle/portion edits to the schedule
 dashboard.py              # Read-only view-model for the index page
 schedule_store.py         # The one parser/writer for feeding_schedules.txt
+graze_rules.py            # Where a graze may sit: 40 min clear, ends before midnight (pure)
 atomicfile.py             # write_atomic(): temp + fsync + os.replace for every state file
 responses.py              # wants_json / error_response shared by route modules
 manual_limit.py           # Daily manual-feed cap (half the schedule, floor ¾ cup) + cooldown
@@ -97,7 +98,7 @@ Key invariants:
 **`feeding_schedules.txt`** — one entry per line: `HH:MM,portion[,fixed][,graze]`
 - `portion`: `small` | `medium` | `large` (1/2/3 dispense cycles)
 - `fixed`: optional; omit to enable randomization
-- `graze`: optional; dispense as 50-step pulses over 20 min on a background
+- `graze`: optional; dispense as 50-step pulses over 30 min on a background
   thread (`feeder_core.run_graze`), lock held per pulse only. One
   "Feeding completed" line at the end (`, graze`); each pulse is journaled
   so a restart mid-graze records what came out (`reconcile_grazes`) and

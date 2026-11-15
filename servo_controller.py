@@ -28,7 +28,7 @@ DEFAULT_PORTION = 'small'
 # jams, so a graze keeps the regular ratio of one jiggle per BASE_STEPS.
 GRAZE_PULSE_STEPS = 50
 GRAZE_JIGGLE_EVERY = BASE_STEPS // GRAZE_PULSE_STEPS
-GRAZE_SPAN_S = 1200
+GRAZE_SPAN_S = 1800
 
 
 def get_portion_cycles(portion_name):

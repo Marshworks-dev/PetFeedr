@@ -24,6 +24,7 @@ import hopper
 import notify
 import events
 import schedule_store
+import graze_rules
 from atomicfile import write_atomic
 
 # One lock for everything that touches the schedule files, the job registry,
@@ -225,35 +226,42 @@ def _track_hopper(cups):
         return None
 
 
-def apply_random_offset(time_str, range_minutes, all_times):
-    """Apply a random offset to a time, avoiding conflicts with other times.
+def apply_random_offset(time_str, range_minutes, busy, graze=False):
+    """Apply a random offset to a time, keeping it clear of other feedings.
 
     Args:
         time_str: Original time in "HH:MM" format
         range_minutes: Max offset in either direction
-        all_times: List of already-scheduled times to avoid (as datetime objects)
+        busy: Already-placed feedings to keep clear of, as (start datetime,
+            is_graze) pairs. A graze is busy from its start to GRAZE_MIN later.
+        graze: Whether this feeding is itself a graze
 
     Returns:
-        New time string in "HH:MM" format
+        New time string in "HH:MM" format. The roll never crosses midnight;
+        when no clear time turns up, the original time.
     """
     base_time = datetime.strptime(time_str, "%H:%M")
+
+    def busy_until(start, is_graze):
+        return start + timedelta(minutes=graze_rules.GRAZE_MIN if is_graze else 0)
 
     # Try up to 10 times to find a non-conflicting time
     for _ in range(10):
         offset = random.randint(-range_minutes, range_minutes)
         new_time = base_time + timedelta(minutes=offset)
 
-        # Keep within same day (0:00 - 23:59)
-        if new_time.hour < 0 or (new_time.day != base_time.day and offset < 0):
-            new_time = base_time  # Don't go before midnight
+        # Keep within the same day, either way: a forward roll from 23:45
+        # would otherwise land at 00:05, before today's earlier meals
+        if new_time.date() != base_time.date():
+            new_time = base_time
 
-        # Check for conflicts (within 10 minutes of another feeding)
-        conflict = False
-        for other_time in all_times:
-            diff = abs((new_time - other_time).total_seconds() / 60)
-            if diff < 10 and diff > 0:  # Within 10 minutes
-                conflict = True
-                break
+        # Conflict: less than BUFFER_MIN between the two busy windows (an
+        # overlap, or the very same minute, counts)
+        new_end = busy_until(new_time, graze)
+        conflict = any(
+            max((new_time - busy_until(start, is_graze)).total_seconds(),
+                (start - new_end).total_seconds()) / 60 < graze_rules.BUFFER_MIN
+            for start, is_graze in busy)
 
         if not conflict:
             return new_time.strftime("%H:%M")
@@ -284,21 +292,22 @@ def generate_todays_schedule():
             return []
 
         todays_schedule = []
-        scheduled_times = []  # Track times to avoid conflicts
+        # Feedings to keep clear of. Fixed ones go in first, so a ±30 roll
+        # also steers around a fixed slot later in the file
+        busy = [(datetime.strptime(e['time'], "%H:%M"), e['graze'])
+                for e in entries if e['is_fixed']]
 
         for entry in entries:
             time_str, portion, is_fixed = entry['time'], entry['portion'], entry['is_fixed']
 
             # Apply randomization if not fixed
             if not is_fixed:
-                actual_time = apply_random_offset(time_str, range_minutes, scheduled_times)
+                actual_time = apply_random_offset(time_str, range_minutes, busy, entry['graze'])
+                busy.append((datetime.strptime(actual_time, "%H:%M"), entry['graze']))
                 log.info(f"Randomized: {time_str} → {actual_time} ({portion} portion)")
             else:
                 actual_time = time_str
                 log.info(f"Fixed time: {actual_time} ({portion} portion)")
-
-            # Track this time for conflict avoidance
-            scheduled_times.append(datetime.strptime(actual_time, "%H:%M"))
 
             # Store for scheduling and web UI display
             todays_schedule.append({

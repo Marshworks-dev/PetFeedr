@@ -19,6 +19,7 @@ from flask import g, has_request_context, request
 
 import camera
 import dashboard
+import graze_rules
 import hopper
 import passcode
 
@@ -67,6 +68,21 @@ def _status_text(slot):
     return _STATUS_TEXT[slot['status']]
 
 
+def _trail_text(trail):
+    """A graze's progress in words, for the dot's label: the crumbs are
+    decoration to a screen reader."""
+    if not trail:
+        return ''
+    pulses, landed = trail['pulses'], trail['landed']
+    if trail['cut_short']:
+        return f"graze stopped after {landed} of {pulses} pulses"
+    if landed == pulses:
+        return f"grazed in {pulses} pulses"
+    if landed:
+        return f"graze, {landed} of {pulses} pulses so far"
+    return f"graze in {pulses} pulses"
+
+
 def _status_badge(slot):
     if slot['status'] == 'late':
         return f"+{slot['late_min']}m" if slot.get('late_min') else '+late'
@@ -102,15 +118,31 @@ def _timeline(ctx):
             'status': s['status'],
             'status_text': _status_text(s),
             'badge': _status_badge(s),
+            'trail': s.get('graze_trail'),
+            'trail_text': _trail_text(s.get('graze_trail')),
         })
-    return {'start': start, 'end': end, 'hours': ctx['timeline_hours'], 'slots': slots}
+    # Manual and Porch feeds: their own nodes, so a feed by hand has
+    # somewhere to land on the bar
+    extras = [{'key': x['key'], 'time': x['time_12h'], 'portion': x['portion'],
+               'pct': round((x['time_minutes'] - start) / span * 100, 3) if span > 0 else 50,
+               'label': f"{x['time_12h']}, extra {x['portion']} feed"
+                        + (' from the porch' if x['source'] == 'porch' else '')}
+              for x in ctx.get('timeline_extras', [])]
+    return {'start': start, 'end': end, 'hours': ctx['timeline_hours'], 'slots': slots,
+            'extras': extras}
 
 
 def _schedule_rows(ctx):
     """The editor lists the times as set, not today's randomized draw."""
     rows = sorted(ctx['schedules'], key=lambda s: s['base_time_24h'])
+    entries = [{'time': s['base_time_24h'], 'is_fixed': s['is_fixed'], 'graze': s['graze']}
+               for s in rows]
+    # Why each row can't graze where it is (None when it can). On a graze
+    # saved before the rules it explains why the row may feed all at once
     return [{'base_time': s['base_time_24h'], 'time': s['base_time_12h'],
-             'portion': s['portion'], 'is_fixed': s['is_fixed'], 'graze': s['graze']} for s in rows]
+             'portion': s['portion'], 'is_fixed': s['is_fixed'], 'graze': s['graze'],
+             'graze_problem': graze_rules.graze_problem(e, entries)}
+            for s, e in zip(rows, entries)]
 
 
 def _feed_card(ctx):
@@ -130,7 +162,7 @@ def _stats_card(ctx):
     rhythm = ctx['rhythm']
     days = []
     for day in rhythm['days']:
-        fed = [m for m in day['marks'] if m['kind'] in ('fed', 'manual', 'late')]
+        fed = [m for m in day['marks'] if m['kind'] in ('fed', 'manual', 'late', 'grazed')]
         notes = ''.join(f"; {m['label']}" for m in day['marks'] if m['kind'] not in ('fed', 'upcoming'))
         days.append({
             'date': day['date'],

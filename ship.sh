@@ -14,7 +14,11 @@ set -euo pipefail
 : "${PI_HOST:?Set PI_HOST=user@host (env or .deploy.env)}"
 PI_PATH="${PI_PATH:-/home/${PI_HOST%@*}/PetFeedr}"
 FEED_GUARD_MIN=3  # a restart this close to a feed races it (catch-up covers it, but why test that)
-GRAZE_GUARD_MIN=21  # a graze runs 20 min after its slot; a restart mid-graze drops the rest
+# A restart mid-graze drops the rest of it: hold off for the whole span (read
+# from servo_controller.py so a span change can't leave this behind) plus a minute
+GRAZE_SPAN_S=$(sed -n 's/^GRAZE_SPAN_S = \([0-9]*\).*/\1/p' "$(dirname "$0")/servo_controller.py")
+[ -n "$GRAZE_SPAN_S" ] || { echo "ship.sh: GRAZE_SPAN_S not found in servo_controller.py" >&2; exit 1; }
+GRAZE_GUARD_MIN=$(( GRAZE_SPAN_S / 60 + 1 ))
 cd "$(dirname "$0")"
 
 say()  { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
@@ -88,6 +92,21 @@ smoke() {
     echo "  no tracebacks since start ($since)"
 }
 
+# A PR opened seconds ago has no checks yet, and `gh pr checks --watch` reads
+# "no checks reported" as a failure. Wait for the run to show up first;
+# gh's own errors (expired login, no network) stay visible while it polls.
+CI_POLL_SEC="${CI_POLL_SEC:-5}"
+CI_POLL_TRIES="${CI_POLL_TRIES:-24}"
+wait_for_ci() {
+    local n=0
+    until [ "$(gh pr checks "$1" --json name -q length || echo 0)" -gt 0 ]; do
+        n=$((n + 1))
+        [ "$n" -lt "$CI_POLL_TRIES" ] || { echo "  no CI run appeared after $((CI_POLL_SEC * CI_POLL_TRIES))s" >&2; return 1; }
+        sleep "$CI_POLL_SEC"
+    done
+    gh pr checks "$1" --watch --fail-fast
+}
+
 if [ "${1:-}" = "--check" ]; then
     feed_guard
     smoke
@@ -140,7 +159,7 @@ else
     gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
 fi
 say "Waiting for CI"
-gh pr checks "$BRANCH" --watch --fail-fast || fail "CI failed — see the PR"
+wait_for_ci "$BRANCH" || fail "CI failed — see the PR"
 feed_guard  # CI took a while; re-check before the restart
 gh pr merge "$BRANCH" --merge --delete-branch
 git pull -q --ff-only origin main

@@ -40,7 +40,12 @@
              keeps it current in place — the page never reloads itself -->
         <main class="dashboard">
             <header class="dashboard-header">
-                <h1><svg class="brand-mark" viewBox="56 56 400 400" aria-hidden="true"><circle cx="256" cy="256" r="200" fill="#f2b632"/><path d="M196 372 V146 H272 A78 78 0 0 1 272 302 H196" fill="none" stroke="#2b1d14" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></svg>PetFeedr</h1>
+                <h1 class="brand"><svg class="brand-mark" viewBox="56 56 400 400" aria-hidden="true"><circle cx="256" cy="256" r="200" fill="#f2b632"/><path d="M196 372 V146 H272 A78 78 0 0 1 272 302 H196" fill="none" stroke="#2b1d14" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/></svg>PetFeedr</h1>
+                <button type="button" class="hopper-button" id="hopper-button" aria-expanded="false"
+                        aria-controls="feed-panel" aria-label="Feed and hopper">
+                    <span class="hopper-gauge" id="hopper-gauge"></span>
+                    <span class="hopper-badge" id="hopper-badge" aria-hidden="true"></span>
+                </button>
                 <div class="dashboard-header-actions">
                 <!-- The passcode lock (cards/lock.js). Open padlock: unlocked, or no passcode set -->
                 <button type="button" class="lock-toggle" id="lock-toggle" data-state="unset" aria-label="No passcode set. Set one.">
@@ -65,6 +70,50 @@
                         <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>
                     </svg>
                 </button>
+                </div>
+                {# The hopper is the feed button: tapping it drops this panel with
+                   the feed controls and the hopper's level (cards/feedpanel.js) #}
+                <div class="feed-panel" id="feed-panel" hidden>
+                    <form action="/feed" method="post" class="feed-form">
+                        {# Seen before holding Feed, so a trickling graze isn't topped up by mistake #}
+                        <div class="grazing-note" id="grazing-note" role="status" hidden></div>
+                        <div class="feed-hold">
+                            <svg class="hold-ring" viewBox="0 0 120 120" aria-hidden="true">
+                                <circle class="hold-ring-track" cx="60" cy="60" r="56"/>
+                                <circle class="hold-ring-fill" cx="60" cy="60" r="56" pathLength="100"/>
+                            </svg>
+                            {# Disabled until feed.js takes over: if the JS never loads, a plain
+                               tap must not submit the form and dispense #}
+                            <button type="submit" class="feed-circle-btn" disabled aria-label="Press and hold to dispense food now">
+                                <span class="feed-circle-label" aria-hidden="true">Feed</span>
+                                <svg class="feed-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1"/></svg>
+                            </button>
+                        </div>
+                        <div class="hold-hint" aria-hidden="true">Hold to feed</div>
+                        <div class="portion-segmented" id="feed-portions" role="radiogroup" aria-label="Portion"></div>
+                        <div class="portion-description" id="portion-desc"></div>
+                        <div class="extras-chip" id="extras-chip"></div>
+                    </form>
+                    <div class="hopper-info" id="hopper-body"></div>
+                    <div class="hopper-refill">
+                        <button type="button" class="btn btn-secondary" id="refill-toggle">I refilled it</button>
+                        <form action="/refill" method="post" class="refill-form" hidden>
+                            <label for="remaining_pct">How full was it before you refilled?</label>
+                            <select id="remaining_pct" name="remaining_pct">
+                                <option value="0">Empty</option>
+                                <option value="10">~10%</option>
+                                <option value="25">~25%</option>
+                                <option value="50">~50%</option>
+                                <option value="75">~75%</option>
+                            </select>
+                            <label for="lbs_added">Pounds added (optional)</label>
+                            <input type="number" id="lbs_added" name="lbs_added" min="0.1" max="50" step="0.1" inputmode="decimal" placeholder="e.g. 7">
+                            <div class="refill-actions">
+                                <button type="submit" class="btn btn-primary">Log it</button>
+                                <button type="button" class="btn btn-secondary" id="refill-cancel">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
                 </div>
             </header>
 
@@ -101,29 +150,6 @@
                     </div>
                 </section>
 
-                <section class="card feed-card">
-                    <form action="/feed" method="post" class="feed-form">
-                        {# Seen before holding Feed, so a trickling graze isn't topped up by mistake #}
-                        <div class="grazing-note" id="grazing-note" role="status" hidden></div>
-                        <div class="feed-hold">
-                            <svg class="hold-ring" viewBox="0 0 120 120" aria-hidden="true">
-                                <circle class="hold-ring-track" cx="60" cy="60" r="56"/>
-                                <circle class="hold-ring-fill" cx="60" cy="60" r="56" pathLength="100"/>
-                            </svg>
-                            {# Disabled until feed.js takes over: if the JS never loads, a plain
-                               tap must not submit the form and dispense #}
-                            <button type="submit" class="feed-circle-btn" disabled aria-label="Press and hold to dispense food now">
-                                <span class="feed-circle-label" aria-hidden="true">Feed</span>
-                                <svg class="feed-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" pathLength="1"/></svg>
-                            </button>
-                        </div>
-                        <div class="hold-hint" aria-hidden="true">Hold to feed</div>
-                        <div class="portion-segmented" id="feed-portions" role="radiogroup" aria-label="Portion"></div>
-                        <div class="portion-description" id="portion-desc"></div>
-                        <div class="extras-chip" id="extras-chip"></div>
-                    </form>
-                </section>
-
                 <section class="card stats-card">
                     <div class="card-label-row">
                         <div class="card-label">Last 7 Days</div>
@@ -134,29 +160,6 @@
                     <div class="stats-footer" id="stats-footer"></div>
                 </section>
 
-                <section class="card hopper-card">
-                    <div class="card-label">Hopper</div>
-                    <div id="hopper-body"></div>
-                    <div class="hopper-refill">
-                        <button type="button" class="btn btn-secondary" id="refill-toggle">I refilled it</button>
-                        <form action="/refill" method="post" class="refill-form" hidden>
-                            <label for="remaining_pct">How full was it before you refilled?</label>
-                            <select id="remaining_pct" name="remaining_pct">
-                                <option value="0">Empty</option>
-                                <option value="10">~10%</option>
-                                <option value="25">~25%</option>
-                                <option value="50">~50%</option>
-                                <option value="75">~75%</option>
-                            </select>
-                            <label for="lbs_added">Pounds added (optional)</label>
-                            <input type="number" id="lbs_added" name="lbs_added" min="0.1" max="50" step="0.1" inputmode="decimal" placeholder="e.g. 7">
-                            <div class="refill-actions">
-                                <button type="submit" class="btn btn-primary">Log it</button>
-                                <button type="button" class="btn btn-secondary" id="refill-cancel">Cancel</button>
-                            </div>
-                        </form>
-                    </div>
-                </section>
             </div>
 
             <footer class="status-footer" id="status-footer"></footer>
@@ -210,7 +213,7 @@
             </div>
             <div class="sheet-body">
                 <ul class="sched-list" id="sched-list"></ul>
-                <p class="setting-description sched-legend" id="sched-legend" hidden>±30m varies the time a little each day; Fixed always feeds on the dot. Graze spreads the portion over 20 minutes.</p>
+                <p class="setting-description sched-legend" id="sched-legend" hidden>±30m varies the time a little each day; Fixed always feeds on the dot. Graze spreads the portion over 30 minutes.</p>
 
                 <section class="sheet-add" id="sheet-add">
                     <h3>Add a feeding</h3>

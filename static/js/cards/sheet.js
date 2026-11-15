@@ -5,6 +5,7 @@
 
 import { $, $$, html, setHTML, expandIn, collapseOut, animate } from '../dom.js';
 import { mutate } from '../store.js';
+import { showToast } from '../toast.js';
 import { portionRadios } from './feed.js';
 
 const CONFIRM_MS = 3000;
@@ -16,10 +17,15 @@ function chipLabel(row) {
         : `Varies by 30 minutes. Tap to fix ${row.time}`;
 }
 
+// row.graze_problem is the server's reason this row can't graze where it
+// is: the chip reads as unavailable and a tap explains instead of toggling.
+// A graze saved before the rules keeps its chip and shows the reason below.
 function grazeLabel(row) {
+    if (row.graze_problem && !row.graze) return `Can't graze ${row.time}. ${row.graze_problem}`;
+    if (row.graze_problem) return `Grazes over 30 minutes, but: ${row.graze_problem} Tap to feed ${row.time} all at once`;
     return row.graze
-        ? `Grazes over 20 minutes. Tap to feed ${row.time} all at once`
-        : `Feeds all at once. Tap to spread ${row.time} over 20 minutes`;
+        ? `Grazes over 30 minutes. Tap to feed ${row.time} all at once`
+        : `Feeds all at once. Tap to spread ${row.time} over 30 minutes`;
 }
 
 function rowMarkup(row) {
@@ -33,7 +39,8 @@ function rowMarkup(row) {
         <button type="button" class="sched-chip graze-chip ${row.graze ? 'is-on' : ''}" data-action="graze"
                 aria-pressed="${row.graze}" aria-label="${grazeLabel(row)}">Graze</button>
         <button type="button" class="btn-icon btn-delete" data-action="delete"
-                aria-label="Delete ${row.time} feeding">✕</button>`;
+                aria-label="Delete ${row.time} feeding">✕</button>
+        <p class="sched-note" hidden></p>`;
 }
 
 function setChip(chip, row) {
@@ -43,9 +50,18 @@ function setChip(chip, row) {
 }
 
 function setGrazeChip(chip, row) {
+    const blocked = Boolean(row.graze_problem) && !row.graze;
     chip.classList.toggle('is-on', row.graze);
+    chip.classList.toggle('is-blocked', blocked);
     chip.setAttribute('aria-pressed', String(row.graze));
+    chip.setAttribute('aria-disabled', String(blocked));
     chip.setAttribute('aria-label', grazeLabel(row));
+    chip.dataset.problem = row.graze_problem || '';
+    const note = $('.sched-note', chip.closest('.sched-row'));
+    if (note) {
+        note.textContent = row.graze && row.graze_problem ? row.graze_problem : '';
+        note.hidden = !note.textContent;
+    }
 }
 
 // Bring an existing row in line with state without rebuilding it, so focus
@@ -78,6 +94,7 @@ export function renderSheet(rows) {
             li.className = 'sched-row';
             li.dataset.key = row.base_time;
             setHTML(li, rowMarkup(row));
+            setGrazeChip($('[data-action="graze"]', li), row);
             // Keep the list in time order as rows arrive
             if (previous) previous.after(li);
             else list.prepend(li);
@@ -136,6 +153,10 @@ function initList() {
             setChip(btn, { is_fixed: nowFixed, time: $('.sched-time', li).textContent });
             mutate('/toggle_fixed', { base_time: baseTime });
         } else if (btn.dataset.action === 'graze') {
+            if (btn.classList.contains('is-blocked')) {
+                showToast(btn.dataset.problem, 'info');
+                return;
+            }
             const nowGraze = !btn.classList.contains('is-on');
             setGrazeChip(btn, { graze: nowGraze, time: $('.sched-time', li).textContent });
             mutate('/toggle_graze', { base_time: baseTime });

@@ -1,5 +1,6 @@
-// Hopper card: a drawing of the hopper whose kibble level glides to its new
-// height, the forecast lines, and the "I refilled it" form.
+// The hopper: a small drawing in the header whose kibble level glides to its
+// new height (it's also the button that opens the feed panel), and in the
+// panel the forecast lines and the "I refilled it" form.
 
 import { $, html, setHTML, tweenNumber, pulse } from '../dom.js';
 import { mutate } from '../store.js';
@@ -10,8 +11,7 @@ import { mutate } from '../store.js';
 const INTERIOR = 50;
 
 const HOPPER_SVG = html`
-    <div class="hopper-visual">
-        <svg class="hopper-svg" viewBox="0 0 64 84" role="img">
+        <svg class="hopper-svg" viewBox="0 0 64 64" aria-hidden="true">
             <defs>
                 <clipPath id="hopper-clip"><path d="M6 4 H58 L45 54 H19 Z"/></clipPath>
                 <pattern id="kibble-pattern" width="9" height="7" patternUnits="userSpaceOnUse">
@@ -27,18 +27,39 @@ const HOPPER_SVG = html`
                 </g>
             </g>
             <path class="hopper-svg-outline" d="M6 4 H58 L45 54 H19 Z"/>
-            <rect class="hopper-svg-spout" x="27" y="54" width="10" height="9" rx="2"/>
-            <path class="hopper-svg-bowl" d="M14 72 H50 Q48 81 32 81 Q16 81 14 72 Z"/>
-        </svg>
-        <div class="hopper-info">
-            <div class="hopper-headline"><span class="hopper-pct"></span> <span class="hopper-lbs"></span></div>
-            <div class="hopper-refill-by"></div>
-            <div class="hopper-sub hopper-days"></div>
-            <div class="hopper-sub hopper-capacity"></div>
-        </div>
-    </div>`;
+            <rect class="hopper-svg-spout" id="hopper-spout" x="27" y="54" width="10" height="9" rx="2"/>
+        </svg>`;
+
+const HOPPER_INFO = html`
+    <div class="hopper-headline"><span class="hopper-pct"></span> <span class="hopper-lbs"></span></div>
+    <div class="hopper-refill-by"></div>
+    <div class="hopper-sub hopper-days"></div>
+    <div class="hopper-sub hopper-capacity"></div>`;
 
 let shownPct = null;
+
+function renderGauge(hopper) {
+    const gauge = $('#hopper-gauge');
+    if (!$('.hopper-svg', gauge)) {
+        setHTML(gauge, HOPPER_SVG);
+        // Start empty so the first level glides up into place
+        $('.hopper-fill', gauge).style.transform = `translateY(${INTERIOR}px)`;
+    }
+    // Still learning its capacity: no level to show, so it reads half full
+    const level = hopper.learning ? 0.5 : hopper.level;
+    $('.hopper-svg', gauge).classList.toggle('is-low', Boolean(hopper.low));
+    // Next frame, so a freshly built drawing transitions from its empty start
+    requestAnimationFrame(() => {
+        $('.hopper-fill', gauge).style.transform = `translateY(${INTERIOR * (1 - level)}px)`;
+    });
+    // Still learning: no level to show, and the panel explains why
+    const badge = $('#hopper-badge');
+    badge.hidden = Boolean(hopper.learning);
+    badge.textContent = hopper.learning ? '' : `${hopper.pct}%`;
+    $('#hopper-button').setAttribute('aria-label', hopper.learning
+        ? 'Feed, and the hopper (still learning how much it holds)'
+        : `Feed, and the hopper: about ${hopper.pct} percent full`);
+}
 
 function renderLearning(body, hopper) {
     shownPct = null;
@@ -51,19 +72,7 @@ function renderLearning(body, hopper) {
 }
 
 function renderLevel(body, hopper) {
-    if (!$('.hopper-visual', body)) {
-        setHTML(body, HOPPER_SVG);
-        // Start empty so the first level glides up into place
-        $('.hopper-fill', body).style.transform = `translateY(${INTERIOR}px)`;
-    }
-    const svg = $('.hopper-svg', body);
-    svg.classList.toggle('is-low', hopper.low);
-    svg.setAttribute('aria-label', `Hopper about ${hopper.pct} percent full`);
-    // Next frame, so a freshly built drawing transitions from its empty start
-    requestAnimationFrame(() => {
-        $('.hopper-fill', body).style.transform = `translateY(${INTERIOR * (1 - hopper.level)}px)`;
-    });
-
+    if (!$('.hopper-headline', body)) setHTML(body, HOPPER_INFO);
     tweenNumber($('.hopper-pct', body), shownPct ?? hopper.pct, hopper.pct, n => `~${n}% full`);
     shownPct = hopper.pct;
 
@@ -82,6 +91,7 @@ function renderLevel(body, hopper) {
 
 export function renderHopper(hopper) {
     const body = $('#hopper-body');
+    renderGauge(hopper);
     if (hopper.learning) renderLearning(body, hopper);
     else renderLevel(body, hopper);
 

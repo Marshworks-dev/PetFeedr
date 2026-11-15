@@ -1,14 +1,15 @@
-// Feed card: press-and-hold to dispense, portion picker, extras left.
+// Feed controls (in the hopper's panel): press-and-hold to dispense,
+// portion picker, extras left. The pour on Today's bar shows the food landing.
 
-import { $, $$, html, setHTML, reducedMotion, pulse } from '../dom.js';
+import { $, $$, html, setHTML, pulse } from '../dom.js';
 import { mutate, setHoldBusy } from '../store.js';
+import { closePanel } from './feedpanel.js';
 
 // Press-and-hold instead of tap-to-confirm: one deliberate gesture, and an
 // accidental brush can't dispense. The ring fills in CSS over HOLD_MS.
 const HOLD_MS = 700;
 // How long the green check stays up after a dispense before the button resets
 const CELEBRATE_MS = 1500;
-const KIBBLE_COUNT = 14;
 
 let descriptions = {};
 // The hint under the button: what the state says it should read at rest,
@@ -42,58 +43,6 @@ function setHint(text, kind = '') {
 }
 
 const vibrate = pattern => navigator.vibrate?.(pattern);  // Android only; iOS has no web vibration
-
-// A dispense: kibble pops out of the bottom of the button (where the real
-// chute is), arcs, and falls with gravity. Web Animations with per-keyframe easing: decelerate on the way
-// up, accelerate on the way down
-function dropKibble(btn) {
-    if (reducedMotion()) return;
-    const card = btn.closest('.feed-card');
-    let layer = card.querySelector('.kibble-layer');
-    if (!layer) {
-        layer = document.createElement('div');
-        layer.className = 'kibble-layer';
-        card.appendChild(layer);
-    }
-    const cardBox = card.getBoundingClientRect();
-    const btnBox = btn.getBoundingClientRect();
-    const originX = btnBox.left - cardBox.left + btnBox.width / 2;
-    const originY = btnBox.bottom - cardBox.top - 4;
-    const spread = (Math.random() - 0.5);
-
-    for (let i = 0; i < KIBBLE_COUNT; i++) {
-        const k = document.createElement('span');
-        k.className = Math.random() < 0.35 ? 'kibble is-dark' : 'kibble';
-        k.style.setProperty('--size', `${6 + Math.random() * 5}px`);
-        k.style.left = `${originX + (Math.random() - 0.5) * 24}px`;
-        k.style.top = `${originY}px`;
-        layer.appendChild(k);
-
-        const dx = (Math.random() - 0.5 + spread * 0.3) * 190;
-        const peak = -(6 + Math.random() * 18);  // a low hop, so the checkmark stays clear
-        const fall = 110 + Math.random() * 70;
-        const rot = (Math.random() - 0.5) * 720;
-        k.animate([
-            { transform: 'translate(0, 0) rotate(0deg) scale(0.5)', opacity: 0,
-              easing: 'cubic-bezier(0.15, 0.6, 0.35, 1)' },
-            { transform: `translate(${dx * 0.4}px, ${peak}px) rotate(${rot * 0.35}deg) scale(1)`, opacity: 1,
-              offset: 0.32, easing: 'cubic-bezier(0.55, 0, 0.85, 0.4)' },
-            { transform: `translate(${dx * 0.85}px, ${fall * 0.8}px) rotate(${rot * 0.85}deg) scale(1)`, opacity: 1,
-              offset: 0.85 },
-            { transform: `translate(${dx}px, ${fall}px) rotate(${rot}deg) scale(0.9)`, opacity: 0 },
-        ], { duration: 950 + Math.random() * 350, delay: i * 26, fill: 'backwards' })
-            .finished.then(() => k.remove(), () => k.remove());
-    }
-}
-
-// The expanding ring when a dispense lands
-function shockwave(wrap) {
-    if (reducedMotion()) return;
-    const ring = document.createElement('span');
-    ring.className = 'feed-shockwave';
-    ring.addEventListener('animationend', () => ring.remove());
-    wrap.appendChild(ring);
-}
 
 function initHold() {
     const form = $('.feed-form');
@@ -156,9 +105,9 @@ function initHold() {
         if (result.ok) {
             wrap.classList.add('done');
             setHint('Fed!', 'done');
-            shockwave(wrap);
-            dropKibble(btn);
             vibrate([20, 50, 30]);
+            // Out of the way, so the pour from the hopper can be seen landing
+            closePanel({ returnFocus: false });
             setTimeout(() => {
                 wrap.classList.remove('done');
                 finish();
