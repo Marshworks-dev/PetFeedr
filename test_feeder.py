@@ -955,6 +955,53 @@ class TestInputsDontZoom(unittest.TestCase):
         self.assertEqual(_font_size_px(later, '.a input'), 14)
 
 
+def _dead_media_overrides(css):
+    """(selector, property) pairs a @media rule sets that a later plain rule
+    for the same selector sets again: same specificity, so the later one wins
+    and the media rule never applies."""
+    import re
+    css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+    plain, media = [], []  # (position, selector, property)
+    depth, start, at_media = 0, 0, []
+    for i, ch in enumerate(css):
+        if ch == '{':
+            head = css[start:i].strip()
+            at_media.append(head.startswith('@media'))
+            depth += 1
+            start = i + 1
+            rule_head = head
+        elif ch == '}':
+            if not at_media.pop():
+                in_media = any(at_media)
+                props = re.findall(r'([a-z-]+)\s*:', css[start:i])
+                for sel in (s.strip() for s in rule_head.split(',')):
+                    for prop in props:
+                        (media if in_media else plain).append((i, sel, prop))
+            depth -= 1
+            start = i + 1
+    return sorted({(sel, prop) for pos, sel, prop in media
+                   for later, psel, pprop in plain
+                   if later > pos and (psel, pprop) == (sel, prop)})
+
+
+class TestNarrowHeader(unittest.TestCase):
+    """At 320px the brand override sat before the base rule and never applied,
+    which pushed the theme button off screen."""
+
+    def test_no_media_override_is_cancelled_by_a_later_rule(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static', 'styles.css')) as f:
+            self.assertEqual(_dead_media_overrides(f.read()), [])
+
+    def test_check_catches_the_shipped_order(self):
+        # Breaker: the order that shipped
+        shipped = ('@media (max-width: 379px) { .h h1 { font-size: 1.45rem; } }\n'
+                   '.h h1 { font-size: 2rem; }')
+        self.assertEqual(_dead_media_overrides(shipped), [('.h h1', 'font-size')])
+        fixed = '.h h1 { font-size: 2rem; }\n@media (max-width: 359px) { .h h1 { font-size: 1.2rem; } }'
+        self.assertEqual(_dead_media_overrides(fixed), [])
+
+
 def _load_check_live():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
