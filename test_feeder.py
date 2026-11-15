@@ -888,11 +888,7 @@ def _hue_gap(a, b):
 
 def _contrast(fg, bg):
     """WCAG contrast ratio of two #rrggbb colours."""
-    def luminance(hex_colour):
-        channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
-        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
-        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
-    light, dark = sorted((luminance(fg), luminance(bg)), reverse=True)
+    light, dark = sorted((_luminance(fg), _luminance(bg)), reverse=True)
     return (light + 0.05) / (dark + 0.05)
 
 

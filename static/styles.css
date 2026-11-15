@@ -605,7 +605,7 @@ body {
     align-items: center;
 }
 
-/* The label is the one yellow line on the espresso card */
+/* The label is the one coral line on the plum card */
 .next-feeding-card .card-label {
     color: var(--color-brand);
 }
@@ -2441,9 +2441,9 @@ body:has(.sheet[open]) {
 
 .bowl-chip.is-offline { background: #8f1036; }
 
-/* Over a picture the card shrinks to a bar across its top. The espresso
-   backing is dense enough to keep cream text above 4.5:1 even over a white
-   frame */
+/* Over a picture the card shrinks to a bar across its top. The plum
+   backing is dense enough to keep the pink-white text above 4.5:1 even over
+   a white frame */
 .hero.has-picture .next-feeding-card,
 .hero.has-picture .next-feeding-card.all-fed,
 [data-theme="dark"] .hero.has-picture .next-feeding-card {
@@ -2528,16 +2528,16 @@ body:has(.sheet[open]) {
 }
 
 /* Where the browser can blur and darken what is behind the bar, the
-   espresso itself can be thin and let the picture show through. Cream text
-   holds 7:1 over a dim floor; over a pure white frame it would drop
+   plum itself can be thin and let the picture show through. The pink-white
+   text holds 7:1 over a dim floor; over a pure white frame it would drop
    further, so the text also carries a shadow. Without backdrop-filter the
-   dense espresso above stays */
+   dense plum above stays */
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .hero.has-picture .next-feeding-card,
     .hero.has-picture .next-feeding-card.all-fed,
     [data-theme="dark"] .hero.has-picture .next-feeding-card {
         /* Frosted glass: a heavy blur melts the picture into soft colour, the
-           espresso is only a tint, and a thin light edge catches the top and bottom */
+           plum is only a tint, and a thin light edge catches the top and bottom */
         background: rgba(42, 26, 46, 0.7);
         -webkit-backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
         backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
@@ -2661,7 +2661,7 @@ body:has(.bowl-full[open]) { overflow: hidden; }
     margin-top: 0.5rem;
     font-size: var(--fs-sm);
     font-weight: 600;
-    /* Darker than --color-danger, which is 3.8:1 on the card at this size */
+    /* Berry's crimson clears 4.5:1 on the card in both themes (tested) */
     color: var(--color-danger);
 }
 
