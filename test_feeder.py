@@ -854,6 +854,23 @@ class TestScheduleRoutes(TempCwd):
         self.assertIn('flex-basis: 100%', credit)
         self.assertNotIn('.footer-credit::before', css)
 
+    def test_wordmark_sizes_to_keep_the_hopper_centred(self):
+        # The header is brand | hopper | actions in 1fr auto 1fr columns. A
+        # wordmark wider than its column grew it and pushed the hopper right
+        # (24px off at 360px). Measured: brand width = 5.38 x font + 9.6px
+        import re
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/styles.css')) as f:
+            css = f.read()
+        self.assertIn('container-type: inline-size', re.search(r'\n\.dashboard-header \{(.*?)\}', css, re.S).group(1))
+        size = re.search(r'\n\.dashboard-header h1 \{(.*?)\}', css, re.S).group(1)
+        cqi, px = map(float, re.search(r'calc\(([0-9.]+)cqi - ([0-9.]+)px\)', size).groups())
+        for header in range(328, 440, 4):  # 360-429px phones, 16px gutters
+            font = cqi * header / 100 - px
+            brand = 5.38 * font + 9.6
+            room = (header - 56 - 16) / 2
+            self.assertLessEqual(brand, room, f'{header}px header: brand {brand:.0f} > {room:.0f}')
+
     def test_footer_logo_is_served_offline_and_calls_nowhere(self):
         import re
         with self.client.get('/static/brand/marshworks-logo-espresso.svg') as svg:
