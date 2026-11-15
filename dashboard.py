@@ -7,7 +7,7 @@ nothing here mutates state.
 from datetime import date, datetime, timedelta
 
 from feeder_core import load_todays_schedule, log, slot_outcome, todays_records
-from feeding_stats import (parse_recent_activity, parse_weekly_stats, build_week_summary,
+from feeding_stats import (EXTRA_SOURCES, parse_recent_activity, parse_weekly_stats, build_week_summary,
                            calculate_consumption_rate, calculate_daily_total, on_time_summary,
                            rhythm_week)
 from servo_controller import PORTION_SIZES, GRAZE_SPAN_S, graze_pulse_count
@@ -174,14 +174,36 @@ def grazing_until(actual_time, todays_events, now):
     return until if now <= until + timedelta(minutes=GRAZING_STALE_MIN) else None
 
 
-def build_timeline(schedules):
-    """Adds time_minutes to each schedule; returns (start, end, hour ticks)."""
+def todays_extras(today=None):
+    """Today's manual and Porch feeds, oldest first, for Today's bar:
+    [{'key', 'time_minutes', 'time_12h', 'portion', 'source'}]."""
+    today = today or date.today()
+    extras = []
+    for e in events.read_all():
+        ts = e.get('ts') or ''
+        if (not ts.startswith(today.isoformat()) or e.get('event') != 'dispense'
+                or e.get('source') not in EXTRA_SOURCES):
+            continue
+        try:
+            at = datetime.fromisoformat(ts)
+        except ValueError:  # a malformed line must not take the dashboard down
+            continue
+        extras.append({'key': f"extra-{ts}", 'time_minutes': at.hour * 60 + at.minute,
+                       'time_12h': at.strftime("%I:%M %p").lstrip("0"),
+                       'portion': e.get('portion') or 'small', 'source': e['source']})
+    return extras
+
+
+def build_timeline(schedules, extras=()):
+    """Adds time_minutes to each schedule; returns (start, end, hour ticks).
+    Extras (todays_extras) widen the range so a manual feed outside the
+    scheduled hours still lands on the bar."""
     for s in schedules:
         h, m = s['actual_time_24h'].split(':')
         s['time_minutes'] = int(h) * 60 + int(m)
 
     if schedules:
-        times_min = [s['time_minutes'] for s in schedules]
+        times_min = [s['time_minutes'] for s in schedules] + [x['time_minutes'] for x in extras]
         timeline_start = max(0, min(times_min) - 60)
         timeline_end = min(1439, max(times_min) + 60)
         # A graze's trail must end on the bar: its share of the bar's width
@@ -237,7 +259,8 @@ def index_context():
     """Everything index.html renders, minus app-level constants."""
     schedules = attach_outcomes(mark_past_feedings(read_schedules_with_details()))
     recent_activity = parse_recent_activity(days=1, limit=1)
-    timeline_start, timeline_end, timeline_hours = build_timeline(schedules)
+    extras = todays_extras()
+    timeline_start, timeline_end, timeline_hours = build_timeline(schedules, extras)
 
     weekly_stats = parse_weekly_stats()
     all_events = events.read_all()
@@ -253,6 +276,7 @@ def index_context():
         'last_feeding': recent_activity[0] if recent_activity else None,
         'timeline_start': timeline_start,
         'timeline_end': timeline_end,
+        'timeline_extras': extras,
         'timeline_hours': timeline_hours,
         'weekly_stats': weekly_stats,
         'rhythm': rhythm_week(

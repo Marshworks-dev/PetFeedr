@@ -1435,6 +1435,120 @@ class TestGrazeTrail(unittest.TestCase):
         self.assertEqual(plain_late, 1439)
 
 
+def _element_html(page, element_id, tag=None):
+    """The markup inside one element, found by id (or the first `tag`),
+    following real nesting: a stray close tag ends it where a browser would."""
+    from html.parser import HTMLParser
+    voids = {'meta', 'link', 'img', 'input', 'br', 'hr', 'source'}
+
+    class Finder(HTMLParser):
+        def __init__(self):
+            super().__init__(convert_charrefs=False)
+            self.depth = None
+            self.start = self.end = None
+
+        def handle_starttag(self, name, attrs):
+            if name in voids:
+                return
+            if self.depth is None and (dict(attrs).get('id') == element_id if element_id else name == tag):
+                self.depth, self.start = 0, self.getpos()
+            if self.depth is not None and self.end is None:
+                self.depth += 1
+
+        def handle_endtag(self, name):
+            if name in voids or self.depth is None or self.end is not None:
+                return
+            self.depth -= 1
+            if self.depth == 0:
+                self.end = self.getpos()
+
+    finder = Finder()
+    finder.feed(page)
+    lines = page.split('\n')
+    (l1, c1), (l2, c2) = finder.start, finder.end
+    if l1 == l2:
+        return lines[l1 - 1][c1:c2]
+    return '\n'.join([lines[l1 - 1][c1:]] + lines[l1:l2 - 1] + [lines[l2 - 1][:c2]])
+
+
+class TestHopperPanel(TempCwd):
+    """The hopper in the header is the feed button; Today's bar shows extras."""
+
+    def setUp(self):
+        super().setUp()
+        import web_interface
+        self.web = web_interface
+        self.client = web_interface.app.test_client()
+
+    def _events(self, *evs):
+        with open('feeding_events.jsonl', 'w') as f:
+            f.writelines(json.dumps(e) + '\n' for e in evs)
+
+    def test_extras_show_on_todays_bar(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("08:00,small,fixed\n18:00,small,fixed\n")
+        today = date.today().isoformat()
+        self._events({'ts': f'{today}T12:05:00', 'event': 'dispense', 'source': 'manual', 'portion': 'small'},
+                     {'ts': f'{today}T13:40:00', 'event': 'dispense', 'source': 'porch', 'portion': 'small'},
+                     {'ts': f'{today}T08:00:02', 'event': 'dispense', 'source': 'scheduled', 'portion': 'small'},
+                     {'ts': '2001-01-01T12:00:00', 'event': 'dispense', 'source': 'manual', 'portion': 'large'},
+                     {'ts': 'not a time', 'event': 'dispense', 'source': 'manual'})
+        timeline = _api_state(self.web)['timeline']
+        self.assertEqual([x['label'] for x in timeline['extras']],
+                         ['12:05 PM, extra small feed', '1:40 PM, extra small feed from the porch'])
+        self.assertTrue(all(0 < x['pct'] < 100 for x in timeline['extras']))
+        self.assertEqual(len({x['key'] for x in timeline['extras']}), 2)
+
+    def test_an_extra_outside_the_schedule_widens_the_bar(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("12:00,small,fixed\n")
+        self._events({'ts': f'{date.today().isoformat()}T05:30:00', 'event': 'dispense',
+                      'source': 'manual', 'portion': 'small'})
+        timeline = _api_state(self.web)['timeline']
+        self.assertLessEqual(timeline['start'], 5 * 60 + 30)
+        self.assertGreaterEqual(timeline['extras'][0]['pct'], 0)
+
+    def test_no_extras_is_an_empty_list(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("12:00,small,fixed\n")
+        self.assertEqual(_api_state(self.web)['timeline']['extras'], [])
+
+    def test_feed_and_hopper_cards_moved_into_the_panel(self):
+        page = self.client.get('/').get_data(as_text=True)
+        self.assertNotIn('feed-card', page)
+        self.assertNotIn('hopper-card', page)
+        self.assertIn('aria-controls="feed-panel"', page)
+        self.assertIn('aria-expanded="false"', page)
+        panel = _element_html(page, 'feed-panel')
+        # It drops from the header, so it lives inside it
+        self.assertIn('id="feed-panel"', _element_html(page, None, tag='header'))
+        for control in ('feed-circle-btn', 'id="feed-portions"', 'id="extras-chip"', 'id="grazing-note"',
+                        'id="hopper-body"', 'refill-form', 'id="refill-toggle"'):
+            self.assertIn(control, panel)
+        # Hidden until the hopper is tapped; the Feed button stays inert until feed.js loads
+        self.assertIn('id="feed-panel" hidden', page)
+        self.assertIn('class="feed-circle-btn" disabled', page)
+
+    def test_every_module_is_precached(self):
+        # A module the service worker doesn't cache breaks the app offline
+        import re
+        here = os.path.dirname(os.path.abspath(__file__))
+        sw = self.client.get('/sw.js').get_data(as_text=True)
+        cached = set(re.findall(r"'(/static/js/[^']+)'", sw))
+        for root, _, files in os.walk(os.path.join(here, 'static', 'js')):
+            for name in files:
+                rel = '/' + os.path.relpath(os.path.join(root, name), here).replace(os.sep, '/')
+                self.assertIn(rel, cached, f'{rel} is not precached')
+
+    def test_pour_only_follows_a_change_and_respects_reduced_motion(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/pour.js')) as f:
+            body = f.read()
+        # The first state is the baseline: nothing pours on load
+        self.assertIn('if (previous) {', body)
+        self.assertIn('reducedMotion() || document.hidden', body)
+
+
 class TestGrazingDisplay(TempCwd):
     """A running graze reads as grazing on the dashboard; the feeder still sees it handled."""
 

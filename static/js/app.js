@@ -12,6 +12,8 @@ import { initTimeline, renderTimeline } from './cards/timeline.js';
 import { initFeed, renderFeed } from './cards/feed.js';
 import { initStats, renderStats } from './cards/stats.js';
 import { initHopper, renderHopper } from './cards/hopper.js';
+import { initFeedPanel } from './cards/feedpanel.js';
+import { watchPours } from './pour.js';
 import { initCamera, renderCamera } from './cards/camera.js';
 import { initLock, renderLock } from './cards/lock.js';
 import { initSheet, renderSheet } from './cards/sheet.js';
@@ -45,7 +47,7 @@ function maybeReloadForDeploy() {
     // Never under work in progress — not even in the background, where a
     // half-typed feeding time would be lost without anyone seeing why
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName);
-    if ($('#schedule-sheet').open || !$('.refill-form').hidden || typing) return;
+    if ($('#schedule-sheet').open || !$('#feed-panel').hidden || typing) return;
     if (document.hidden || Date.now() - lastInteraction > DEPLOY_RELOAD_IDLE_MS) location.reload();
 }
 
@@ -66,6 +68,8 @@ async function poll() {
 function registerCards() {
     register(s => s.next, renderNext);
     register(s => ({ timeline: s.timeline, dailyTotal: s.daily_total_label }), renderTimeline);
+    // After the timeline, so the node a pour lands on is already drawn
+    register(s => s.timeline, watchPours);
     register(s => s.feed, renderFeed);
     register(s => s.stats, renderStats);
     register(s => s.hopper, renderHopper);
@@ -88,6 +92,7 @@ function start() {
     initFeed(initial);
     initStats();
     initHopper();
+    initFeedPanel();
     initCamera();
     initSheet(initial);
     registerCards();

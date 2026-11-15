@@ -72,7 +72,10 @@ function ensureTimeline(body) {
     let timeline = $('.timeline', body);
     if (!timeline) {
         setHTML(body, html`<div class="timeline">
-            <div class="timeline-bar"><div class="timeline-now" id="timeline-now" aria-hidden="true"></div></div>
+            <div class="timeline-bar">
+                <div class="timeline-charge" aria-hidden="true"></div>
+                <div class="timeline-now" id="timeline-now" aria-hidden="true"></div>
+            </div>
             <div class="timeline-hours"></div>
         </div>`);
         timeline = $('.timeline', body);
@@ -81,7 +84,7 @@ function ensureTimeline(body) {
 }
 
 function renderDots(bar, slots) {
-    const existing = new Map($$('.timeline-dot', bar).map(el => [el.dataset.key, el]));
+    const existing = new Map($$('.timeline-dot:not(.extra)', bar).map(el => [el.dataset.key, el]));
     for (const slot of slots) {
         let dot = existing.get(slot.key);
         const isNew = !dot;
@@ -113,6 +116,28 @@ function renderDots(bar, slots) {
         animate(stale, [{ opacity: 1 }, { opacity: 0, scale: 0.4 }], { duration: 200 })
             .then(() => stale.remove());
     }
+}
+
+// Manual and Porch feeds: a node each, keyed by when they happened
+function renderExtras(bar, extras) {
+    const existing = new Map($$('.timeline-dot.extra', bar).map(el => [el.dataset.key, el]));
+    for (const extra of extras) {
+        let dot = existing.get(extra.key);
+        if (!dot) {
+            dot = document.createElement('div');
+            dot.className = 'timeline-dot extra is-past';
+            dot.dataset.key = extra.key;
+            dot.setAttribute('role', 'img');
+            bar.appendChild(dot);
+            animate(dot, [{ opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1 }], { duration: 300 });
+        }
+        dot.style.setProperty('--dot-pos', `${extra.pct}%`);
+        dot.setAttribute('aria-label', extra.label);
+        setHTML(dot, html`<div class="timeline-tooltip">${extra.label}</div>`);
+        existing.delete(extra.key);
+    }
+    // Midnight clears the day's extras
+    for (const stale of existing.values()) stale.remove();
 }
 
 function placeNow(now) {
@@ -153,6 +178,7 @@ export function renderTimeline({ timeline, dailyTotal }) {
     }
     range = { start: timeline.start, end: timeline.end };
     renderDots($('.timeline-bar', el), timeline.slots);
+    renderExtras($('.timeline-bar', el), timeline.extras || []);
     placeNow(new Date());
 }
 

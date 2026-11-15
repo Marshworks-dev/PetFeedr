@@ -1,6 +1,6 @@
 # Graze trail, and the hopper becomes the feed button
 
-Status: draft
+Status: shipped
 
 Intent: A graze reads as what it is, a meal spread out over time, on Today's
 bar and the 7-day chart. The hopper moves to the top of the screen and

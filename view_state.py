@@ -121,7 +121,15 @@ def _timeline(ctx):
             'trail': s.get('graze_trail'),
             'trail_text': _trail_text(s.get('graze_trail')),
         })
-    return {'start': start, 'end': end, 'hours': ctx['timeline_hours'], 'slots': slots}
+    # Manual and Porch feeds: their own nodes, so a feed by hand has
+    # somewhere to land on the bar
+    extras = [{'key': x['key'], 'time': x['time_12h'], 'portion': x['portion'],
+               'pct': round((x['time_minutes'] - start) / span * 100, 3) if span > 0 else 50,
+               'label': f"{x['time_12h']}, extra {x['portion']} feed"
+                        + (' from the porch' if x['source'] == 'porch' else '')}
+              for x in ctx.get('timeline_extras', [])]
+    return {'start': start, 'end': end, 'hours': ctx['timeline_hours'], 'slots': slots,
+            'extras': extras}
 
 
 def _schedule_rows(ctx):
