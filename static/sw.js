@@ -21,8 +21,8 @@ const PRECACHE = [
     '/static/js/cards/lock.js',
     '/static/js/cards/sheet.js',
     '/static/js/cards/footer.js',
-    '/static/fonts/baloo2-latin.woff2',
-    '/static/fonts/dmsans-latin.woff2',
+    '/static/fonts/fredoka-latin.woff2',
+    '/static/fonts/nunito-latin.woff2',
 ];
 
 self.addEventListener('install', event => {

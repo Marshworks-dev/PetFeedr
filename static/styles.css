@@ -8,80 +8,108 @@
    Self-hosted latin subsets of the variable fonts (SIL OFL, licences beside
    them in static/fonts/). One file per family covers every weight we use. */
 @font-face {
-    font-family: 'Baloo 2';
+    font-family: 'Fredoka';
     font-style: normal;
-    font-weight: 400 700;
+    font-weight: 300 700;
     font-display: swap;
-    src: url('fonts/baloo2-latin.woff2') format('woff2');
+    src: url('fonts/fredoka-latin.woff2') format('woff2');
 }
 
 @font-face {
-    font-family: 'DM Sans';
+    font-family: 'Nunito';
     font-style: normal;
-    font-weight: 400 600;
+    font-weight: 400 700;
     font-display: swap;
-    src: url('fonts/dmsans-latin.woff2') format('woff2');
+    src: url('fonts/nunito-latin.woff2') format('woff2');
 }
 
 /* ===== CSS Variables ===== */
 :root {
-    --color-bg: #f0f4f4;
-    --color-bg-warm: #e8eded;
-    --color-surface: #ffffff;
-    --color-text: #1a2e30;
-    --color-text-muted: #4a6466;
-    --color-primary: #00838f;
-    --color-primary-dark: #005f66;
-    --color-accent: #f08080;
-    --color-accent-dark: #e06666;
-    --color-success: #27ae60;
-    --color-warning: #f39c12;
-    --color-danger: #e74c3c;
-    
-    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
-    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
-    --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
-    
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 20px;
-    
+    /* Kibble: cream and espresso with the MarshWorks yellow and orange.
+       --color-primary is the strong colour (espresso in light, yellow in
+       dark); --color-on-primary is the text that sits on it */
+    --color-bg: #faf4ea;
+    --color-bg-warm: #f3e8d6;
+    --color-surface: #fffaf2;
+    --color-text: #2b1d14;
+    --color-text-muted: #6b5646;
+    --color-primary: #2b1d14;
+    --color-primary-dark: #1a110b;
+    --color-on-primary: #faf4ea;
+    --color-accent: #e8762c;
+    --color-accent-dark: #a8461a;
+    --color-brand: #f2b632;
+    --color-on-brand: #2b1d14;
+    --color-brand-soft: #fbe7b5;
+    --color-emphasis: #8a5a12;
+    --color-ink: #2b1d14;
+    --color-on-ink: #faf4ea;
+    --color-success: #3f7d4a;
+    --color-warning: #c77d06;
+    --color-danger: #b3261e;
+    --color-on-danger: #ffffff;
+
+    /* Portion sizes step down in lightness, so they read apart without colour */
+    --color-portion-small: #f2b632;
+    --color-portion-medium: #e8762c;
+    --color-portion-large: #8f2d1c;
+
+    --shadow-sm: 0 1px 2px rgba(43,29,20,0.06);
+    --shadow-md: 0 4px 12px rgba(43,29,20,0.1);
+    --shadow-lg: 0 8px 30px rgba(43,29,20,0.14);
+
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 22px;
+
     --card-padding: clamp(0.75rem, 1.5vw, 1.25rem);
 
-    --color-border: rgba(0,0,0,0.08);
-    --color-border-light: rgba(0,0,0,0.05);
+    --color-border: #e6d8c2;
+    --color-border-light: #efe4d2;
     --color-input-bg: #ffffff;
 
     --color-card-schedule: var(--color-primary);
     --color-card-feed: var(--color-accent);
-    --color-card-activity: #8e44ad;
+    --color-card-activity: #7a4a8c;
     --color-card-stats: var(--color-warning);
 
-    --font-display: 'Baloo 2', cursive;
-    --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-display: 'Fredoka', 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-body: 'Nunito', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* ===== Dark Mode ===== */
 [data-theme="dark"] {
-    --color-bg: #0d2224;
-    --color-bg-warm: #0a1c1e;
-    --color-surface: #142e31;
-    --color-text: #e0e8e8;
-    --color-text-muted: #8aa0a2;
-    --color-primary: #00acc1;
-    --color-primary-dark: #00838f;
-    --color-accent: #f08080;
-    --color-accent-dark: #e06666;
-    --color-success: #2ecc71;
-    --color-warning: #f1c40f;
-    --color-danger: #e74c3c;
-    --color-border: rgba(255,255,255,0.1);
-    --color-border-light: rgba(255,255,255,0.06);
-    --color-input-bg: #1a3538;
+    --color-bg: #1a130e;
+    --color-bg-warm: #140f0b;
+    --color-surface: #251b14;
+    --color-text: #f6ecdf;
+    --color-text-muted: #c9b6a2;
+    --color-primary: #f2b632;
+    --color-primary-dark: #d99a14;
+    --color-on-primary: #1a130e;
+    --color-accent: #e8762c;
+    --color-accent-dark: #f0955a;
+    --color-brand: #f2b632;
+    --color-on-brand: #1a130e;
+    --color-brand-soft: #3d2e14;
+    --color-emphasis: #f2b632;
+    --color-ink: #2e2219;
+    --color-on-ink: #f6ecdf;
+    --color-success: #7cc48a;
+    /* Orange, not yellow: yellow is "fed" in dark, and late must read apart */
+    --color-warning: #f0955a;
+    --color-danger: #ff8a80;
+    --color-on-danger: #1a130e;
+    --color-portion-small: #f6d27a;
+    --color-portion-medium: #e8762c;
+    --color-portion-large: #b8402a;
+    --color-border: #3d2f23;
+    --color-border-light: #30251c;
+    --color-input-bg: #2e2219;
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
     --shadow-lg: 0 8px 30px rgba(0,0,0,0.5);
-    --color-card-activity: #bb86fc;
+    --color-card-activity: #c9a2d6;
 }
 
 /* ===== Reset & Base ===== */
@@ -158,7 +186,7 @@ body {
 .form-group select:focus {
     outline: none;
     border-color: var(--color-primary);
-    box-shadow: 0 0 0 3px rgba(0,131,143,0.15);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
 }
 
 .checkbox-label {
@@ -255,13 +283,13 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
     width: 100%;
 }
 
 .btn-primary:hover {
-    box-shadow: 0 4px 12px rgba(0,131,143,0.3);
+    box-shadow: var(--shadow-md);
 }
 
 .btn-secondary {
@@ -273,19 +301,19 @@ body {
 
 .btn-secondary:hover {
     background: var(--color-primary);
-    color: white;
+    color: var(--color-on-primary);
 }
 
 .btn-feed {
-    background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%);
-    color: white;
+    background: var(--color-brand);
+    color: var(--color-on-brand);
     padding: 1rem 2rem;
     font-size: 1.1rem;
     border-radius: var(--radius-md);
 }
 
 .btn-feed:hover {
-    box-shadow: 0 6px 20px rgba(240,128,128,0.4);
+    box-shadow: var(--shadow-md);
 }
 
 .feed-icon {
@@ -313,7 +341,7 @@ body {
 
 .btn-delete:hover {
     background: var(--color-danger);
-    color: white;
+    color: var(--color-on-danger);
 }
 
 /* ===== Dashboard ===== */
@@ -353,18 +381,20 @@ body {
 }
 
 .dashboard-header h1 {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
     font-family: var(--font-display);
-    font-size: clamp(2.2rem, 6vw, 3.5rem);
-    font-weight: 700;
-    letter-spacing: -0.02em;
+    font-size: clamp(1.7rem, 5vw, 2.6rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--color-text);
 }
 
-.pet {
-    color: var(--color-accent);
-}
-
-.feedr {
-    color: var(--color-primary);
+.brand-mark {
+    width: 1.35em;
+    height: 1.35em;
+    flex: none;
 }
 
 .theme-toggle,
@@ -378,8 +408,8 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: var(--shadow-sm);
-    color: var(--color-text-muted);
+    border: 1.5px solid var(--color-border);
+    color: var(--color-text);
     transition: box-shadow 0.2s ease, color 0.2s ease;
 }
 
@@ -426,7 +456,7 @@ body {
     background: var(--color-surface);
     border-radius: var(--radius-lg);
     padding: var(--card-padding);
-    box-shadow: var(--shadow-sm);
+    border: 1.5px solid var(--color-border);
 }
 
 .card-label {
@@ -441,8 +471,9 @@ body {
 /* Next Feeding Card */
 .next-feeding-card {
     grid-column: 1 / -1;
-    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-    color: white;
+    background: var(--color-ink);
+    color: var(--color-on-ink);
+    border-color: var(--color-ink);
     text-align: center;
     padding: clamp(0.75rem, 2vw, 1.5rem);
     display: flex;
@@ -451,14 +482,9 @@ body {
     align-items: center;
 }
 
-/* Solid, not faded: at 0.8 opacity this small label dropped below 4.5:1 */
+/* The label is the one yellow line on the espresso card */
 .next-feeding-card .card-label {
-    color: white;
-}
-
-/* Dark theme's brighter teal (#00acc1) gave white text 2.7:1; these give 5.4–8.7:1 */
-[data-theme="dark"] .next-feeding-card:not(.all-fed) {
-    background: linear-gradient(135deg, #00767f 0%, #00545c 100%);
+    color: var(--color-brand);
 }
 
 .next-feeding-time {
@@ -486,33 +512,33 @@ body {
 }
 
 .portion-small {
-    background: rgba(39,174,96,0.15);
-    color: #27ae60;
+    background: color-mix(in srgb, var(--color-portion-small) 30%, transparent);
+    color: var(--color-text);
 }
 
 .next-feeding-card .portion-small {
-    background: rgba(255,255,255,0.2);
-    color: white;
+    background: rgba(255,255,255,0.14);
+    color: var(--color-on-ink);
 }
 
 .portion-medium {
-    background: rgba(243,156,18,0.15);
-    color: #f39c12;
+    background: color-mix(in srgb, var(--color-portion-medium) 25%, transparent);
+    color: var(--color-text);
 }
 
 .next-feeding-card .portion-medium {
-    background: rgba(255,255,255,0.2);
-    color: white;
+    background: rgba(255,255,255,0.14);
+    color: var(--color-on-ink);
 }
 
 .portion-large {
-    background: rgba(231,76,60,0.15);
-    color: #e74c3c;
+    background: color-mix(in srgb, var(--color-portion-large) 22%, transparent);
+    color: var(--color-text);
 }
 
 .next-feeding-card .portion-large {
-    background: rgba(255,255,255,0.2);
-    color: white;
+    background: rgba(255,255,255,0.14);
+    color: var(--color-on-ink);
 }
 
 .randomized-note {
@@ -520,24 +546,15 @@ body {
     font-style: italic;
 }
 
-/* All-Fed State — light keeps the sunny gradient but takes dark text (white
-   on it was 1.8:1); dark deepens the gradient so white text clears 4.9:1 */
+/* All-Fed State: the day is done, so the card turns sunny yellow */
 .next-feeding-card.all-fed {
-    background: linear-gradient(135deg, #f8b400 0%, #f08080 100%);
-    color: #3b2200;
+    background: var(--color-brand);
+    border-color: var(--color-brand);
+    color: var(--color-on-brand);
 }
 
 .next-feeding-card.all-fed .card-label {
-    color: #3b2200;
-}
-
-[data-theme="dark"] .next-feeding-card.all-fed {
-    background: linear-gradient(135deg, #a85d00 0%, #9c3f53 100%);
-    color: white;
-}
-
-[data-theme="dark"] .next-feeding-card.all-fed .card-label {
-    color: white;
+    color: var(--color-on-brand);
 }
 
 .all-fed-content {
@@ -648,21 +665,21 @@ body {
 }
 
 .timeline-dot.is-next {
-    box-shadow: 0 0 0 4px rgba(240,128,128,0.2);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand) 45%, transparent);
     animation: dotPulse 2s ease infinite;
 }
 
 @keyframes dotPulse {
-    0%, 100% { box-shadow: 0 0 0 4px rgba(240,128,128,0.2); }
-    50%      { box-shadow: 0 0 0 8px rgba(240,128,128,0.1); }
+    0%, 100% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-brand) 45%, transparent); }
+    50%      { box-shadow: 0 0 0 8px color-mix(in srgb, var(--color-brand) 20%, transparent); }
 }
 
-.timeline-dot.portion-small  { border-color: var(--color-success); --dot-fill: var(--color-success); }
-.timeline-dot.portion-small.is-past  { background: var(--color-success); }
-.timeline-dot.portion-medium { border-color: var(--color-warning); --dot-fill: var(--color-warning); }
-.timeline-dot.portion-medium.is-past { background: var(--color-warning); }
-.timeline-dot.portion-large  { border-color: var(--color-danger); --dot-fill: var(--color-danger); }
-.timeline-dot.portion-large.is-past  { background: var(--color-danger); }
+.timeline-dot.portion-small  { border-color: var(--color-portion-small); --dot-fill: var(--color-portion-small); }
+.timeline-dot.portion-small.is-past  { background: var(--color-portion-small); }
+.timeline-dot.portion-medium { border-color: var(--color-portion-medium); --dot-fill: var(--color-portion-medium); }
+.timeline-dot.portion-medium.is-past { background: var(--color-portion-medium); }
+.timeline-dot.portion-large  { border-color: var(--color-portion-large); --dot-fill: var(--color-portion-large); }
+.timeline-dot.portion-large.is-past  { background: var(--color-portion-large); }
 
 .timeline-dot:hover {
     transform: translate(-50%, -50%) scale(1.3);
@@ -705,14 +722,14 @@ body {
     padding: 2px 4px;
     border-radius: 999px;
     white-space: nowrap;
-    color: #3d2a00;  /* white on amber fails contrast in both themes */
+    color: #2b1d14;  /* espresso on the amber badge, both themes */
     background: var(--color-warning);
     pointer-events: none;
 }
 
 .status-missed .dot-badge,
 .status-failed .dot-badge {
-    color: white;
+    color: var(--color-on-danger);
     background: var(--color-danger);
     min-width: 1.2em;
     text-align: center;
@@ -832,12 +849,19 @@ body {
     padding: clamp(0.75rem, 2vw, 1.25rem);
 }
 
+/* The Feed button on the left, its portion choice and notes beside it */
 .feed-form {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 1.1rem;
+    row-gap: 0.45rem;
     align-items: center;
-    gap: 0.6rem;
+    justify-items: start;
 }
+
+.feed-form > .grazing-note { grid-column: 1 / -1; justify-self: stretch; }
+.feed-form > .feed-hold { grid-column: 1; grid-row: span 4; }
+.feed-form > :not(.feed-hold):not(.grazing-note) { grid-column: 2; }
 
 /* Circular Feed Button */
 .feed-circle-btn {
@@ -845,10 +869,11 @@ body {
     height: clamp(80px, 12vw, 100px);
     border-radius: 50%;
     border: none;
-    background: var(--color-primary);
-    color: white;
+    background: var(--color-brand);
+    color: var(--color-on-brand);
     cursor: pointer;
-    box-shadow: 0 6px 20px rgba(0,131,143,0.35);
+    /* Flat: a pale ring, no raised ledge */
+    box-shadow: 0 0 0 6px var(--color-brand-soft);
     transition: transform 0.15s ease, box-shadow 0.15s ease;
     position: relative;
     overflow: hidden;
@@ -856,25 +881,18 @@ body {
 
 .feed-circle-btn:hover {
     transform: scale(1.05);
-    box-shadow: 0 8px 28px rgba(0,131,143,0.5);
-}
-
-/* Same 2.7:1 problem as the Next card in dark mode; #00767f gives "FEED" 5.4:1 */
-[data-theme="dark"] .feed-circle-btn:not(:disabled) {
-    background: #00767f;
+    box-shadow: 0 0 0 8px var(--color-brand-soft);
 }
 
 .feed-circle-btn:active {
     transform: scale(0.95);
-    box-shadow: 0 2px 10px rgba(0,131,143,0.3);
+    box-shadow: 0 0 0 4px var(--color-brand-soft);
 }
 
 .feed-circle-label {
     font-family: var(--font-display);
-    font-size: 1.4rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 1.5rem;
+    font-weight: 600;
 }
 
 @keyframes feedRipple {
@@ -896,8 +914,8 @@ body {
 }
 
 @keyframes feedPulse {
-    0%, 100% { box-shadow: 0 6px 20px rgba(0,131,143,0.35); }
-    50%      { box-shadow: 0 0 30px rgba(39,174,96,0.6); }
+    0%, 100% { box-shadow: 0 0 0 6px var(--color-brand-soft); }
+    50%      { box-shadow: 0 0 0 12px color-mix(in srgb, var(--color-success) 35%, transparent); }
 }
 
 /* Segmented Portion Control */
@@ -933,18 +951,18 @@ body {
 }
 
 .portion-segment input:checked + .portion-segment-label.portion-small {
-    background: var(--color-success);
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
 }
 
 .portion-segment input:checked + .portion-segment-label.portion-medium {
-    background: var(--color-warning);
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
 }
 
 .portion-segment input:checked + .portion-segment-label.portion-large {
-    background: var(--color-danger);
-    color: white;
+    background: var(--color-primary);
+    color: var(--color-on-primary);
 }
 
 .portion-description {
@@ -1304,7 +1322,7 @@ body {
 .btn-icon.confirming,
 .btn-feed.confirming {
     background: var(--color-danger);
-    color: white;
+    color: var(--color-on-danger);
     border-color: var(--color-danger);
 }
 
@@ -1985,7 +2003,7 @@ body:has(.sheet[open]) {
 .graze-chip.is-on {
     border-color: var(--color-primary);
     background: var(--color-primary);
-    color: var(--color-bg);
+    color: var(--color-on-primary);
 }
 
 .sched-row .btn-delete {
@@ -2127,17 +2145,17 @@ body:has(.sheet[open]) {
     bottom: 0.5rem;
     padding: 0.2rem 0.55rem;
     border-radius: 999px;
-    background: rgba(0, 0, 0, 0.7);
-    color: #fff;
+    background: rgba(43, 29, 20, 0.88);
+    color: #faf4ea;
     font-size: 0.75rem;
     font-weight: 600;
 }
 
 .bowl-chip.is-offline { background: #9b1c1c; }
 
-/* Over a picture the card shrinks to a bar across its top. The blurred teal
-   backing is dense enough to keep white text above 4.5:1 even over a white
-   frame (5.4:1 at its lightest) */
+/* Over a picture the card shrinks to a bar across its top. The espresso
+   backing is dense enough to keep cream text above 4.5:1 even over a white
+   frame */
 .hero.has-picture .next-feeding-card,
 .hero.has-picture .next-feeding-card.all-fed,
 [data-theme="dark"] .hero.has-picture .next-feeding-card {
@@ -2152,11 +2170,12 @@ body:has(.sheet[open]) {
     column-gap: 0.6rem;
     padding: 0.4rem 0.9rem;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    background: linear-gradient(135deg, rgba(0, 84, 92, 0.82) 0%, rgba(0, 63, 70, 0.82) 100%);
+    background: rgba(43, 29, 20, 0.86);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     box-shadow: none;
-    color: #fff;
+    border: 0;
+    color: #faf4ea;
     text-align: left;
     /* Nothing in the bar is tappable; taps reach the picture under it */
     pointer-events: none;
@@ -2220,18 +2239,18 @@ body:has(.sheet[open]) {
     clip: rect(0, 0, 0, 0);
 }
 
-/* Where the browser can blur and darken what is behind the bar, the teal
-   itself can be thin and let the picture show through. White text holds
-   7:1 over a dim floor; over a pure white frame it would drop to
-   3.4:1, so the text also carries a shadow. Without backdrop-filter the
-   dense teal above stays */
+/* Where the browser can blur and darken what is behind the bar, the
+   espresso itself can be thin and let the picture show through. Cream text
+   holds 7:1 over a dim floor; over a pure white frame it would drop
+   further, so the text also carries a shadow. Without backdrop-filter the
+   dense espresso above stays */
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .hero.has-picture .next-feeding-card,
     .hero.has-picture .next-feeding-card.all-fed,
     [data-theme="dark"] .hero.has-picture .next-feeding-card {
         /* Frosted glass: a heavy blur melts the picture into soft colour, the
-           teal is only a tint, and a thin light edge catches the top and bottom */
-        background: linear-gradient(135deg, rgba(0, 84, 92, 0.3) 0%, rgba(0, 63, 70, 0.3) 100%);
+           espresso is only a tint, and a thin light edge catches the top and bottom */
+        background: rgba(43, 29, 20, 0.7);
         -webkit-backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
         backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
         border-bottom: 1px solid rgba(255, 255, 255, 0.2);

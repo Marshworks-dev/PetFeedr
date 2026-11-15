@@ -774,9 +774,72 @@ class TestScheduleRoutes(TempCwd):
         import re
         sw = self.client.get('/sw.js').get_data(as_text=True)
         paths = re.findall(r"^\s*'(/[^']*)',", sw, re.M)
-        self.assertIn('/static/fonts/baloo2-latin.woff2', paths)
+        self.assertIn('/static/fonts/fredoka-latin.woff2', paths)
         for path in paths:
             self.assertEqual(self.client.get(path).status_code, 200, path)
+
+
+def _theme_tokens(css, selector):
+    """The --color-* custom properties set in one theme block of styles.css."""
+    import re
+    block = re.search(re.escape(selector) + r'\s*\{(.*?)\n\}', css, re.S).group(1)
+    return dict(re.findall(r'--(color-[a-z-]+):\s*(#[0-9a-fA-F]{6})\s*;', block))
+
+
+def _contrast(fg, bg):
+    """WCAG contrast ratio of two #rrggbb colours."""
+    def luminance(hex_colour):
+        channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    light, dark = sorted((luminance(fg), luminance(bg)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+class TestKibbleLook(unittest.TestCase):
+    """The Kibble palette: readable text in both themes, and no teal left over."""
+
+    # (text, background) token pairs the dashboard actually draws
+    TEXT_PAIRS = [
+        ('color-text', 'color-bg'), ('color-text', 'color-surface'),
+        ('color-text-muted', 'color-bg'), ('color-text-muted', 'color-surface'),
+        ('color-primary', 'color-surface'), ('color-on-primary', 'color-primary'),
+        ('color-on-brand', 'color-brand'), ('color-on-ink', 'color-ink'),
+        ('color-brand', 'color-ink'), ('color-accent-dark', 'color-surface'),
+        ('color-danger', 'color-surface'), ('color-on-danger', 'color-danger'),
+        ('color-text', 'color-brand-soft'),
+    ]
+
+    @classmethod
+    def setUpClass(cls):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static', 'styles.css')) as f:
+            css = f.read()
+        light = _theme_tokens(css, ':root')
+        cls.themes = {'light': light, 'dark': {**light, **_theme_tokens(css, '[data-theme="dark"]')}}
+
+    def test_text_pairs_pass_aa_in_both_themes(self):
+        for theme, tokens in self.themes.items():
+            for fg, bg in self.TEXT_PAIRS:
+                ratio = _contrast(tokens[fg], tokens[bg])
+                self.assertGreaterEqual(ratio, 4.5, f'{theme}: {fg} on {bg} is {ratio:.2f}:1')
+
+    def test_contrast_check_catches_a_failing_pair(self):
+        # Breaker: yellow text on cream is the mistake this guards against
+        self.assertLess(_contrast('#f2b632', '#faf4ea'), 4.5)
+        self.assertAlmostEqual(_contrast('#000000', '#ffffff'), 21.0, places=1)
+
+    def test_old_teal_and_coral_are_gone(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        old = ('#00838f', '#005f66', '#00acc1', '#00767f', '#f0f4f4', '#0d2224',
+               '#f08080', '#e06666', '0,131,143', '240,128,128', '0, 84, 92')
+        for rel in ('static/styles.css', 'static/icon.svg', 'static/logo.svg',
+                    'static/manifest.json', 'templates/index.html',
+                    'static/js/theme.js', 'static/js/cards/next.js'):
+            with open(os.path.join(here, rel)) as f:
+                body = f.read().lower()
+            for colour in old:
+                self.assertNotIn(colour, body, f'{rel} still has {colour}')
 
 
 def _load_check_live():
@@ -1230,7 +1293,8 @@ class TestGrazingDisplay(TempCwd):
         super().setUp()
         self.now = datetime.now().replace(second=0, microsecond=0)
         self.slot_dt = self.now - timedelta(minutes=10)
-        if self.slot_dt.date() != self.now.date():
+        # The graze runs 20 minutes from its slot; that must end today too
+        if self.slot_dt.date() != (self.slot_dt + timedelta(minutes=20)).date():
             self.skipTest("too close to midnight")
         self.slot = self.slot_dt.strftime("%H:%M")
         with open('feeding_schedules.txt', 'w') as f:
@@ -1493,7 +1557,9 @@ class TestGraze(TempCwd):
         self.assertEqual(feeder_core.slot_outcome('17:30', self.today, [], lines), ('fed', None))
 
     def test_scheduled_graze_starts_in_background(self):
-        with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed:
+        # Pinned: the real check reads the clock, and after 23:40 any graze crosses midnight
+        with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed, \
+             patch('feeder_core.graze_crosses_midnight', return_value=False):
             self.assertTrue(feeder_core.scheduled_feed('large', '17:30', '17:34', graze=True))
         start.assert_called_once_with('large', '17:30', '17:34')
         feed.assert_not_called()
@@ -1512,7 +1578,8 @@ class TestGraze(TempCwd):
         feeder_core.save_todays_schedule([{'base_time': slot, 'actual_time': slot, 'portion': 'small',
                                            'is_fixed': True, 'randomized': False, 'graze': True}])
         with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed, \
-             patch('feeder_core.notify.send'):
+             patch('feeder_core.notify.send'), \
+             patch('feeder_core.graze_crosses_midnight', return_value=False):
             self.assertEqual(feeder_core.catch_up_missed(), [slot])
         self.assertEqual(start.call_args.kwargs['late_by_min'], 5)
         feed.assert_not_called()

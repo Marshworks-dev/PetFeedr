@@ -13,7 +13,7 @@ const SLEEPING_CAT = trusted(`
             <path d="M75,35 L68,10 L58,30" fill="white" opacity="0.9"/>
             <path d="M35,42 Q42,36 49,42" stroke="#555" stroke-width="2.5" fill="none" stroke-linecap="round"/>
             <path d="M51,42 Q58,36 65,42" stroke="#555" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-            <path d="M46,50 L50,53 L54,50" stroke="#f08080" stroke-width="2" fill="#f08080" stroke-linejoin="round"/>
+            <path d="M46,50 L50,53 L54,50" stroke="#e8762c" stroke-width="2" fill="#e8762c" stroke-linejoin="round"/>
         </g>
         <text class="sleep-z z1" x="68" y="28" font-size="17" fill="currentColor" font-family="sans-serif">z</text>
         <text class="sleep-z z2" x="68" y="28" font-size="17" fill="currentColor" font-family="sans-serif">z</text>
