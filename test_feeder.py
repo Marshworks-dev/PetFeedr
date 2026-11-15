@@ -829,6 +829,15 @@ class TestKibbleLook(unittest.TestCase):
         self.assertLess(_contrast('#f2b632', '#faf4ea'), 4.5)
         self.assertAlmostEqual(_contrast('#000000', '#ffffff'), 21.0, places=1)
 
+    def test_toasts_follow_an_open_dialog(self):
+        # A modal <dialog> covers the page and makes it inert: a toast left
+        # outside the schedule sheet was neither seen nor announced
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/toast.js')) as f:
+            body = f.read()
+        self.assertIn("document.querySelector('dialog[open]')", body)
+        self.assertIn('host.appendChild(container)', body)
+
     def test_old_teal_and_coral_are_gone(self):
         here = os.path.dirname(os.path.abspath(__file__))
         old = ('#00838f', '#005f66', '#00acc1', '#00767f', '#f0f4f4', '#0d2224',
