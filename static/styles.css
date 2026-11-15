@@ -1190,3 +1190,1187 @@ body {
 .day-detail-item:hover .detail-cups {
     display: inline;
 }
+
+.day-detail-type {
+    font-size: 0.7rem;
+    color: var(--color-text-muted);
+    margin-left: auto;
+}
+
+.stats-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: auto;
+    padding-top: 0.4rem;
+    border-top: 1px solid var(--color-border-light);
+    flex-shrink: 0;
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+}
+
+.consumption-rate {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-weight: 500;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--color-text-muted);
+    font-style: italic;
+    padding: 1rem;
+}
+
+/* Empty Onboarding */
+.empty-onboarding {
+    text-align: center;
+    padding: 2rem 1rem;
+}
+
+.empty-onboarding .empty-icon {
+    color: var(--color-text-muted);
+    opacity: 0.5;
+    margin-bottom: 1rem;
+}
+
+.empty-onboarding h3 {
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    font-weight: 600;
+    color: var(--color-text);
+    margin-bottom: 0.5rem;
+}
+
+.empty-onboarding p {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    margin-bottom: 1rem;
+}
+
+.empty-hint {
+    font-style: italic;
+}
+
+/* ===== Toasts ===== */
+#toast-container {
+    position: fixed;
+    bottom: calc(1.5rem + env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 0.5rem;
+    pointer-events: none;
+    width: min(400px, 90vw);
+}
+
+.toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.85rem 1rem;
+    background: var(--color-surface);
+    color: var(--color-text);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    border-left: 4px solid var(--color-primary);
+    font-size: 0.9rem;
+    animation: toast-in 0.3s ease forwards;
+}
+
+.toast.success { border-left-color: var(--color-success); }
+.toast.error   { border-left-color: var(--color-danger); }
+.toast.info    { border-left-color: var(--color-primary); }
+
+.toast.removing {
+    animation: toast-out 0.3s ease forwards;
+}
+
+@keyframes toast-in {
+    from { opacity: 0; transform: translateY(1rem); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toast-out {
+    from { opacity: 1; transform: translateY(0); }
+    to   { opacity: 0; transform: translateY(1rem); }
+}
+
+/* Inline confirm state */
+.btn-icon.confirming,
+.btn-feed.confirming {
+    background: var(--color-danger);
+    color: white;
+    border-color: var(--color-danger);
+}
+
+/* ===== Countdown ===== */
+.feeding-countdown {
+    font-size: 1.1rem;
+    opacity: 0.85;
+    margin-top: 0.25rem;
+    font-weight: 500;
+    transition: opacity 0.2s ease;
+}
+
+.feeding-countdown.updating {
+    opacity: 0.3;
+}
+
+/* ===== Micro-Animations ===== */
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+.schedule-item {
+    animation: slideIn 0.3s ease both;
+}
+.schedule-item:nth-child(1) { animation-delay: 0.05s; }
+.schedule-item:nth-child(2) { animation-delay: 0.10s; }
+.schedule-item:nth-child(3) { animation-delay: 0.15s; }
+.schedule-item:nth-child(4) { animation-delay: 0.20s; }
+.schedule-item:nth-child(5) { animation-delay: 0.25s; }
+.schedule-item:nth-child(6) { animation-delay: 0.30s; }
+
+@keyframes scaleBounce {
+    0%   { transform: scale(0); }
+    60%  { transform: scale(1.3); }
+    100% { transform: scale(1); }
+}
+
+.schedule-done {
+    animation: scaleBounce 0.4s ease both;
+}
+
+/* Hover effects — only on interactive elements, not cards */
+
+/* Respect reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* ===== Status Footer ===== */
+.status-footer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: clamp(0.25rem, 0.5vw, 0.5rem);
+    padding-bottom: max(clamp(0.25rem, 0.5vw, 0.5rem), env(safe-area-inset-bottom));
+    margin-top: auto;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    /* Stays pinned like before, now that the page itself scrolls */
+    position: sticky;
+    bottom: 0;
+    background: color-mix(in srgb, var(--color-bg) 85%, transparent);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+}
+
+.footer-divider {
+    opacity: 0.3;
+}
+
+.footer-sim {
+    color: var(--color-warning);
+    font-weight: 600;
+}
+
+/* ===== Hopper Card ===== */
+.hopper-learning {
+    font-size: 0.95rem;
+    color: var(--color-text);
+    margin-bottom: 4px;
+}
+
+.hopper-amount {
+    font-family: var(--font-display);
+    font-weight: 600;
+    color: var(--color-primary);
+}
+
+.hopper-refill {
+    margin-top: 12px;
+}
+
+.refill-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+}
+
+.refill-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.refill-form select,
+.refill-form input {
+    padding: 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-input-bg);
+    color: var(--color-text);
+    font-family: var(--font-body);
+}
+
+
+/* ===== Hold to Feed ===== */
+.feed-card {
+    position: relative;
+}
+
+/* Kibble is clipped by its own overlay, not the card: overflow:hidden on
+   a grid item drops its minimum height to 0, and the viewport-fit grid
+   then squeezes the card's row until it overlaps the next card */
+.kibble-layer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit;
+    pointer-events: none;
+}
+
+.feed-hold {
+    position: relative;
+    display: grid;
+    place-items: center;
+    padding: 9px;
+}
+
+.hold-ring {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+    pointer-events: none;
+}
+
+.hold-ring circle {
+    fill: none;
+    stroke-width: 5;
+    stroke-linecap: round;
+}
+
+.hold-ring-track {
+    stroke: var(--color-border);
+}
+
+.hold-ring-fill {
+    stroke: var(--color-accent);
+    stroke-dasharray: 100;
+    stroke-dashoffset: 100;
+    transition: stroke-dashoffset 0.2s ease-out;  /* snaps back on early release */
+}
+
+.feed-hold.holding .hold-ring-fill {
+    stroke-dashoffset: 0;
+    /* Ease-in: the fill starts slow and rushes to the end, so a hold builds
+       tension. Duration matches HOLD_MS in static/js/cards/feed.js */
+    transition: stroke-dashoffset 0.7s cubic-bezier(0.55, 0, 0.85, 0.35);
+}
+
+.feed-circle-btn {
+    touch-action: manipulation;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+}
+
+.feed-circle-btn:disabled {
+    background: var(--color-text-muted);
+    box-shadow: none;
+    opacity: 0.45;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.hold-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-top: -0.3rem;
+}
+
+.hold-hint.nudge {
+    color: var(--color-accent-dark);
+    font-weight: 600;
+    animation: hintNudge 0.4s ease;
+}
+
+@keyframes hintNudge {
+    0%, 100% { transform: translateX(0); }
+    25%      { transform: translateX(-4px); }
+    75%      { transform: translateX(4px); }
+}
+
+.portion-segment input:disabled + .portion-segment-label {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.extras-chip {
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 2px 10px;
+    border-radius: 999px;
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+}
+
+.extras-chip.is-empty {
+    color: var(--color-accent-dark);
+}
+
+.grazing-note {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-text-muted);
+    text-align: center;
+    margin-bottom: 0.5rem;
+}
+
+/* ===== Feed Sequence =====
+   feed.js walks .feed-hold through: holding → dispensing → done (or failed).
+   Kibble pieces are flown from JS (per-keyframe easing for the arc). */
+
+/* Release: spring back past rest and settle, like a physical button */
+.feed-hold .feed-circle-btn {
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
+                box-shadow 0.3s ease, background 0.3s ease;
+}
+
+/* Press: squish in and charge up a glow alongside the ring */
+.feed-hold.holding .feed-circle-btn {
+    transform: scale(0.92);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--color-accent) 25%, transparent),
+                0 0 34px color-mix(in srgb, var(--color-accent) 55%, transparent);
+    transition: transform 0.7s cubic-bezier(0.55, 0, 0.85, 0.35),
+                box-shadow 0.7s cubic-bezier(0.55, 0, 0.85, 0.35);
+}
+
+/* Dispensing: the ring becomes a sweeping arc while the motor runs */
+.feed-hold.dispensing .hold-ring {
+    animation: ringSweep 0.9s linear infinite;
+}
+
+.feed-hold.dispensing .hold-ring-fill {
+    stroke-dashoffset: 72;
+    transition: stroke-dashoffset 0.3s ease-out;
+}
+
+@keyframes ringSweep {
+    from { transform: rotate(-90deg); }
+    to   { transform: rotate(270deg); }
+}
+
+/* Done: green ring, a springy pop, FEED turns into a drawn checkmark */
+.feed-hold.done .hold-ring-fill {
+    stroke: var(--color-success);
+    stroke-dashoffset: 0;
+}
+
+.feed-hold.done .feed-circle-btn {
+    background: var(--color-success);
+    /* The feed that uses up the last extras disables the button mid-celebration;
+       finish the moment at full strength, then let it grey out */
+    opacity: 1;
+    animation: feedPop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes feedPop {
+    0%   { transform: scale(0.92); }
+    45%  { transform: scale(1.12); }
+    100% { transform: scale(1); }
+}
+
+.feed-circle-label {
+    display: inline-block;
+    transition: opacity 0.2s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.feed-hold.done .feed-circle-label {
+    opacity: 0;
+    transform: scale(0.6);
+}
+
+.feed-check {
+    position: absolute;
+    inset: 0;
+    margin: auto;
+    width: 46%;
+    height: 46%;
+    fill: none;
+    stroke: white;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    opacity: 0;
+    transition: stroke-dashoffset 0.35s ease-out 0.12s, opacity 0.1s ease 0.1s;
+}
+
+.feed-hold.done .feed-check {
+    stroke-dashoffset: 0;
+    opacity: 1;
+}
+
+/* One expanding ring when the dispense lands */
+.feed-shockwave {
+    position: absolute;
+    inset: 9px;
+    border-radius: 50%;
+    border: 3px solid var(--color-success);
+    pointer-events: none;
+    animation: shockwave 0.7s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes shockwave {
+    from { transform: scale(1);   opacity: 0.8; }
+    to   { transform: scale(1.9); opacity: 0; }
+}
+
+/* Failed: a short "no" shake while the ring drains */
+.feed-hold.failed .feed-circle-btn {
+    animation: feedShake 0.42s ease;
+}
+
+@keyframes feedShake {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-7px); }
+    40%      { transform: translateX(6px); }
+    60%      { transform: translateX(-4px); }
+    80%      { transform: translateX(2px); }
+}
+
+.hold-hint.is-active {
+    color: var(--color-primary);
+    font-weight: 600;
+}
+
+.hold-hint.is-done {
+    color: var(--color-success);
+    font-weight: 600;
+}
+
+/* Kibble: positioned and flown by feed.js */
+.kibble {
+    position: absolute;
+    width: var(--size);
+    height: calc(var(--size) * 0.8);
+    border-radius: 45% 55% 50% 50% / 55% 50% 50% 45%;
+    background: radial-gradient(circle at 35% 30%, #dba46b, #9c5f2a 70%);
+    pointer-events: none;
+    z-index: 3;
+}
+
+.kibble.is-dark {
+    background: radial-gradient(circle at 35% 30%, #b97a45, #6e3e17 70%);
+}
+
+/* ===== Streak ===== */
+.card-label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.card-label-row .card-label {
+    margin-bottom: 0;
+}
+
+.streak-chip {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(243, 156, 18, 0.15);
+    color: var(--color-text);
+    white-space: nowrap;
+}
+
+.streak-chip.is-muted {
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+/* ===== Hopper Visual ===== */
+.hopper-visual {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 4px;
+}
+
+.hopper-svg {
+    width: 64px;
+    height: 84px;
+    flex-shrink: 0;
+}
+
+.hopper-svg-empty { fill: var(--color-bg); }
+.hopper-svg-fill { fill: #c8894a; }
+.hopper-svg.is-low .hopper-svg-fill { fill: var(--color-warning); }
+.kibble-dot { fill: rgba(0, 0, 0, 0.16); }
+
+.hopper-svg-outline {
+    fill: none;
+    stroke: var(--color-text-muted);
+    stroke-width: 2;
+    stroke-linejoin: round;
+}
+
+.hopper-svg-spout { fill: var(--color-text-muted); }
+.hopper-svg-bowl { fill: var(--color-accent); }
+
+.hopper-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.hopper-headline {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--color-text);
+}
+
+.hopper-lbs {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+}
+
+.hopper-refill-by {
+    font-weight: 600;
+    color: var(--color-primary);
+}
+
+.hopper-refill-by.is-urgent {
+    color: var(--color-accent-dark);
+}
+
+.hopper-sub {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+}
+
+/* ===== Card header action ===== */
+/* A real button, not a corner link: the schedule editor's only way in */
+.card-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+    border: none;
+    min-height: 36px;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.card-action:hover {
+    background: color-mix(in srgb, var(--color-primary) 20%, transparent);
+}
+
+.card-action:active {
+    transform: scale(0.96);
+}
+
+.schedule-card .card-label-row {
+    align-items: center;
+}
+
+/* ===== Schedule Sheet ===== */
+/* Phones: slides up from the bottom. Desktop: centered panel (see media query).
+   Entry/exit animate via @starting-style + allow-discrete transitions
+   (Chrome 117+, Safari 17.5+); older browsers just snap open/closed. */
+.sheet {
+    position: fixed;
+    inset: auto 0 0 0;
+    width: 100%;
+    max-width: 100%;
+    max-height: 88dvh;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-lg);
+    flex-direction: column;
+    transform: translateY(100%);
+    transition:
+        transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1),
+        overlay 0.35s allow-discrete,
+        display 0.35s allow-discrete;
+}
+
+.sheet[open] {
+    display: flex;
+    transform: none;
+}
+
+@starting-style {
+    .sheet[open] { transform: translateY(100%); }
+}
+
+.sheet::backdrop {
+    background: rgba(0, 0, 0, 0);
+    transition:
+        background 0.3s ease,
+        overlay 0.3s allow-discrete,
+        display 0.3s allow-discrete;
+}
+
+.sheet[open]::backdrop {
+    background: rgba(0, 0, 0, 0.4);
+}
+
+@starting-style {
+    .sheet[open]::backdrop { background: rgba(0, 0, 0, 0); }
+}
+
+/* The page behind a modal sheet shouldn't scroll */
+body:has(.sheet[open]) {
+    overflow: hidden;
+}
+
+.sheet-grabber {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--color-border);
+    margin: 0.5rem auto 0;
+    flex-shrink: 0;
+}
+
+.sheet-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 1rem 0.25rem;
+    flex-shrink: 0;
+}
+
+.sheet-header h2 {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.sheet-close {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 50%;
+    background: var(--color-bg);
+    color: var(--color-text-muted);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.sheet-body {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0.5rem 1rem max(1rem, env(safe-area-inset-bottom));
+}
+
+@media (min-width: 700px) {
+    .sheet {
+        inset: 0;
+        margin: auto;
+        width: min(480px, calc(100% - 2rem));
+        height: fit-content;
+        max-height: 85dvh;
+        border-radius: var(--radius-lg);
+        transform: none;
+        opacity: 0;
+        scale: 0.96;
+        transition:
+            opacity 0.2s ease,
+            scale 0.25s cubic-bezier(0.2, 0.9, 0.3, 1),
+            overlay 0.25s allow-discrete,
+            display 0.25s allow-discrete;
+    }
+    .sheet[open] { opacity: 1; scale: 1; }
+    @starting-style {
+        .sheet[open] { opacity: 0; scale: 0.96; }
+    }
+    .sheet-grabber { display: none; }
+    .sheet-header { padding-top: 1rem; }
+}
+
+/* Schedule rows */
+.sched-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.sched-row {
+    display: grid;
+    grid-template-columns: 1fr auto auto auto auto;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.5rem 0.5rem;
+    background: var(--color-bg);
+    border-radius: var(--radius-md);
+}
+
+.sched-time {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sched-chip {
+    font: inherit;
+    font-size: 0.75rem;
+    font-weight: 600;
+    min-width: 3.25rem;
+    padding: 0.35rem 0.45rem;
+    border-radius: 999px;
+    border: 1.5px dashed var(--color-primary);
+    background: transparent;
+    color: var(--color-primary);
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.sched-chip.is-fixed {
+    border-style: solid;
+    border-color: var(--color-text-muted);
+    color: var(--color-text-muted);
+}
+
+/* Graze is off by default, so its off state is the quiet one */
+.graze-chip {
+    min-width: 0;
+    border-style: solid;
+    border-color: var(--color-text-muted);
+    color: var(--color-text-muted);
+}
+
+.graze-chip.is-on {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    color: var(--color-bg);
+}
+
+.sched-row .btn-delete {
+    min-width: 2rem;
+    min-height: 2.25rem;
+}
+
+/* Under ~360px five columns don't fit: the time gets its own line */
+@media (max-width: 359px) {
+    .sched-row { grid-template-columns: auto auto auto 1fr; }
+    .sched-time { grid-column: 1 / -1; }
+    .sched-row .btn-delete { justify-self: end; }
+}
+
+.sched-legend {
+    margin: 0.5rem 0.25rem 0;
+}
+
+.portion-segmented.is-compact .portion-segment-label {
+    padding: 0.35rem 0.55rem;
+    font-size: 0.8rem;
+}
+
+/* Add form */
+.sheet-add {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.sheet-add h3 {
+    font-family: var(--font-display);
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+}
+
+.add-row {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.add-row input[type="time"] {
+    flex: 1;
+    min-width: 0;
+    padding: 0.45rem 0.75rem;
+    font: inherit;
+    font-size: 1rem;
+    color: var(--color-text);
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-input-bg);
+}
+
+.add-row input[type="time"]:focus {
+    outline: none;
+    border-color: var(--color-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sheet, .sheet::backdrop { transition: none; }
+}
+
+/* ===== Live updates ===== */
+/* The kibble level slides to its new height (hopper.js sets the transform) */
+.hopper-fill {
+    transition: transform 0.9s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.timeline-dot {
+    transition: background-color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.day-detail-message {
+    text-align: center;
+    color: var(--color-text-muted);
+}
+
+.footer-offline {
+    color: var(--color-danger);
+    font-weight: 600;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .hopper-fill { transition: none; }
+}
+
+.noscript-note {
+    margin-bottom: 0.75rem;
+    text-align: center;
+}
+
+/* ===== Bowl picture (behind the Next feeding text) ===== */
+.hero {
+    grid-column: 1 / -1;
+    position: relative;
+    display: grid;
+}
+
+.bowl-open {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--color-bg-warm);
+    box-shadow: var(--shadow-sm);
+    cursor: zoom-in;
+}
+
+.bowl-open[hidden] { display: none; }
+
+.bowl-open:focus-visible { outline-offset: -4px; }
+
+/* Cropped wide: the whole frame is one tap away */
+.bowl-frame {
+    display: block;
+    width: 100%;
+    height: 100%;
+    aspect-ratio: 16 / 10;
+    object-fit: cover;
+}
+
+@media (min-width: 601px) {
+    .bowl-frame { aspect-ratio: 21 / 9; }
+}
+
+/* An old frame must not pass for the bowl right now */
+.bowl-frame.is-stale {
+    opacity: 0.55;
+    filter: grayscale(1);
+}
+
+.bowl-chip {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    padding: 0.2rem 0.55rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.bowl-chip.is-offline { background: #9b1c1c; }
+
+/* Over a picture the card shrinks to a bar across its top. The blurred teal
+   backing is dense enough to keep white text above 4.5:1 even over a white
+   frame (5.4:1 at its lightest) */
+.hero.has-picture .next-feeding-card,
+.hero.has-picture .next-feeding-card.all-fed,
+[data-theme="dark"] .hero.has-picture .next-feeding-card {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 1;
+    /* One row: every line here hides the bowl */
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: baseline;
+    column-gap: 0.6rem;
+    padding: 0.4rem 0.9rem;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: linear-gradient(135deg, rgba(0, 84, 92, 0.82) 0%, rgba(0, 63, 70, 0.82) 100%);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    box-shadow: none;
+    color: #fff;
+    text-align: left;
+    /* Nothing in the bar is tappable; taps reach the picture under it */
+    pointer-events: none;
+}
+
+/* The time says what the bar is; the label stays for screen readers */
+.hero.has-picture .next-feeding-card .card-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+}
+
+.hero.has-picture .next-feeding-time {
+    margin: 0;
+    font-size: clamp(1.25rem, 4.5vw, 1.6rem);
+}
+
+.hero.has-picture .feeding-countdown {
+    /* Full strength: the faded countdown is tuned for the solid card */
+    opacity: 1;
+    margin: 0;
+    font-size: 0.95rem;
+}
+
+.hero.has-picture .next-feeding-portion {
+    margin-left: auto;
+    gap: 0.5rem;
+}
+
+.hero.has-picture .portion-badge { padding: 0.15rem 0.6rem; }
+
+.hero.has-picture .next-feeding-none,
+.hero.has-picture .all-fed-content {
+    text-align: left;
+}
+
+.hero.has-picture .all-fed-content {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: 0.6rem;
+}
+
+.hero.has-picture .all-fed-text {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.hero.has-picture .all-fed-subtext { font-size: 0.85rem; }
+
+/* "Next 4:00 AM" fits beside the headline; screen readers keep the full line */
+.hero.has-picture .all-fed-long {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+}
+
+/* Where the browser can blur and darken what is behind the bar, the teal
+   itself can be thin and let the picture show through. White text holds
+   7:1 over a dim floor; over a pure white frame it would drop to
+   3.4:1, so the text also carries a shadow. Without backdrop-filter the
+   dense teal above stays */
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .hero.has-picture .next-feeding-card,
+    .hero.has-picture .next-feeding-card.all-fed,
+    [data-theme="dark"] .hero.has-picture .next-feeding-card {
+        /* Frosted glass: a heavy blur melts the picture into soft colour, the
+           teal is only a tint, and a thin light edge catches the top and bottom */
+        background: linear-gradient(135deg, rgba(0, 84, 92, 0.3) 0%, rgba(0, 63, 70, 0.3) 100%);
+        -webkit-backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
+        backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+    }
+}
+
+/* The sleeping cat would cover the bowl */
+.hero.has-picture .all-fed-illustration { display: none; }
+
+.bowl-full {
+    /* The page's margin reset takes the dialog's centring with it */
+    margin: auto;
+    width: min(100vw, 1280px);
+    max-width: 100vw;
+    max-height: 100dvh;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: #000;
+    color: #fff;
+}
+
+.bowl-full::backdrop { background: rgba(0, 0, 0, 0.8); }
+
+.bowl-full-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0.25rem 0.25rem 0.9rem;
+}
+
+.bowl-full-bar h2 {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.bowl-close {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: none;
+    color: #fff;
+    font-size: 1.6rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.bowl-full img {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: calc(100dvh - 52px);
+    object-fit: contain;
+}
+
+body:has(.bowl-full[open]) { overflow: hidden; }
+
+/* ===== Passcode lock ===== */
+.lock-icon { display: none; }
+.lock-toggle[data-state="locked"] .icon-locked,
+.lock-toggle[data-state="unlocked"] .icon-open,
+.lock-toggle[data-state="unset"] .icon-open {
+    display: block;
+}
+
+.lock-toggle[data-state="locked"] { color: var(--color-primary); }
+/* No passcode yet: the open padlock, quieter */
+.lock-toggle[data-state="unset"] .icon-open { opacity: 0.55; }
+
+.lock-dialog {
+    /* The page's margin reset takes the dialog's centring with it */
+    margin: auto;
+    width: min(92vw, 22rem);
+    padding: 1.25rem;
+    border: 0;
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text);
+    box-shadow: var(--shadow-lg);
+}
+
+.lock-dialog::backdrop { background: rgba(0, 0, 0, 0.5); }
+
+.lock-dialog h2 {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    margin-bottom: 0.5rem;
+}
+
+.lock-note {
+    font-size: 0.9rem;
+    color: var(--color-text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.lock-dialog label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin: 0.5rem 0 0.25rem;
+}
+
+.lock-dialog input {
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    /* Muted text colour, not the faint card border: a field's edge needs 3:1 */
+    border: 2px solid var(--color-text-muted);
+    border-radius: var(--radius-md);
+    background: var(--color-bg);
+    color: var(--color-text);
+    font: inherit;
+    font-size: 1.25rem;
+    letter-spacing: 0.3em;
+}
+
+.lock-error {
+    min-height: 1.3em;
+    margin-top: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 600;
+    /* Darker than --color-danger, which is 3.8:1 on the card at this size */
+    color: #b3261e;
+}
+
+[data-theme="dark"] .lock-error { color: #ff8a80; }
+
+.lock-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.lock-actions[hidden],
+#lock-entry[hidden],
+#lock-confirm-row[hidden] { display: none; }
+
+.lock-actions .btn { flex: 1 1 auto; }
+
+body:has(.lock-dialog[open]) { overflow: hidden; }
