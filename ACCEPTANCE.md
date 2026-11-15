@@ -1,6 +1,6 @@
 # Made by MarshWorks in the footer
 
-Status: approved
+Status: shipped
 
 Intent: PetFeedr says who makes it, quietly. The status footer ends with
 "Made by" and the MarshWorks logo at about the height of the footer text.
