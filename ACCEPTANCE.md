@@ -1,6 +1,6 @@
 # Slate: PetFeedr's own colours
 
-Status: approved
+Status: shipped
 
 Intent: PetFeedr drops the espresso, cream and yellow it borrowed from
 MarshWorks and gets a palette of its own that reads calm and reliable:
