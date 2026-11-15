@@ -76,7 +76,7 @@ function ensureTimeline(body) {
                 <div class="timeline-charge" aria-hidden="true"></div>
                 <div class="timeline-now" id="timeline-now" aria-hidden="true"></div>
             </div>
-            <div class="timeline-hours"></div>
+            <div class="timeline-hours" aria-hidden="true"></div>
         </div>`);
         timeline = $('.timeline', body);
     }

@@ -899,15 +899,20 @@ class TestKibbleLook(unittest.TestCase):
 
 
 def _font_size_px(css, selector):
-    """The px font-size the first rule naming exactly this selector sets, or None."""
+    """The smallest px font-size any rule naming exactly this selector sets, or None.
+    Resolves the --fs-* scale tokens from :root."""
     import re
+    tokens = dict(re.findall(r'--(fs-[a-z]+):\s*([0-9.]+rem)', css))
+    sizes = []
     for sel, body in re.findall(r'([^{}]+)\{([^{}]*)\}', css):
         if selector not in [s.strip() for s in sel.split(',')]:
             continue
-        size = re.search(r'font-size:\s*([0-9.]+)(rem|px)\s*;', body)
-        if size:
-            return float(size.group(1)) * (16 if size.group(2) == 'rem' else 1)
-    return None
+        for value in re.findall(r'font-size:\s*([^;]+);', body):
+            value = re.sub(r'var\(--(fs-[a-z]+)\)', lambda t: tokens[t.group(1)], value.strip())
+            size = re.fullmatch(r'([0-9.]+)(rem|px)', value)
+            if size:
+                sizes.append(float(size.group(1)) * (16 if size.group(2) == 'rem' else 1))
+    return min(sizes) if sizes else None
 
 
 class TestInputsDontZoom(unittest.TestCase):
@@ -925,10 +930,29 @@ class TestInputsDontZoom(unittest.TestCase):
             self.assertIsNotNone(size, f'{field} sets no font-size; the browser default is ~13px')
             self.assertGreaterEqual(size, 16, f'{field} is {size}px')
 
+    # Glyphs sized to fit inside a dot or crumb, not text anyone reads
+    GLYPHS = {'.dot-badge', '.crumb.stopped', '.mark-missed', '.mark-failed'}
+
+    def test_no_text_under_12px(self):
+        import re
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static', 'styles.css')) as f:
+            css = re.sub(r'/\*.*?\*/', '', f.read(), flags=re.S)
+        for sel, _ in re.findall(r'([^{}]+)\{([^{}]*)\}', css):
+            for one in (s.strip() for s in sel.split(',')):
+                if one in self.GLYPHS:
+                    continue
+                size = _font_size_px(css, one)
+                if size is not None:
+                    self.assertGreaterEqual(size, 12, f'{one} is {size}px')
+
     def test_size_check_catches_a_small_field(self):
         # Breaker: the refill form shipped with no size, and the add form at 0.9rem
         self.assertIsNone(_font_size_px('.refill-form input { padding: 8px; }', '.refill-form input'))
         self.assertEqual(_font_size_px('.a input, .a select { font-size: 0.9rem; }', '.a select'), 14.4)
+        # A later rule that shrinks the field still counts, and so does a token
+        later = ':root { --fs-sm: 0.875rem; } .a input { font-size: 1rem; } .a input { font-size: var(--fs-sm); }'
+        self.assertEqual(_font_size_px(later, '.a input'), 14)
 
 
 def _load_check_live():
@@ -1461,7 +1485,7 @@ class TestGrazeTrail(unittest.TestCase):
                 {'actual_time_24h': '23:20', 'graze': True, 'portion': 'large'}]
         start, end, hours = dashboard.build_timeline(late)
         self.assertGreaterEqual((end - (23 * 60 + 20)) / (end - start), trail_share)
-        self.assertIn('12AM', [h['label'] for h in hours])
+        self.assertIn('12a', [h['label'] for h in hours])
         # A plain last slot keeps the old cap
         _, plain_late, _ = dashboard.build_timeline([{'actual_time_24h': '23:20', 'graze': False,
                                                       'portion': 'large'}])
