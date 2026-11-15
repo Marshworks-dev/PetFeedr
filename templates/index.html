@@ -162,7 +162,11 @@
 
             </div>
 
-            <footer class="status-footer" id="status-footer"></footer>
+            <footer class="status-footer">
+                <span class="status-items" id="status-items"></span>
+                <!-- The kit's logo file as it came (marshworks-brand/dist); its alt finishes the credit line -->
+                <span class="footer-credit">Made by <img src="{{ url_for('static', filename='brand/marshworks-logo-espresso.svg') }}" alt="MarshWorks" width="32" height="16"></span>
+            </footer>
         </main>
 
         <!-- Passcode prompt: unlock, set or change, and the unlocked menu (cards/lock.js) -->

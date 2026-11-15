@@ -25,6 +25,7 @@ const PRECACHE = [
     '/static/js/cards/footer.js',
     '/static/fonts/fredoka-latin.woff2',
     '/static/fonts/nunito-latin.woff2',
+    '/static/brand/marshworks-logo-espresso.svg',
 ];
 
 self.addEventListener('install', event => {
