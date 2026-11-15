@@ -1,27 +1,30 @@
-# Berry: PetFeedr's own colours
+# Slate: PetFeedr's own colours
 
 Status: approved
 
 Intent: PetFeedr drops the espresso, cream and yellow it borrowed from
-MarshWorks and gets a palette of its own: plum ink, a coral accent and a
-soft pink-white, light and dark. The layout and type stay as they are; the
+MarshWorks and gets a palette of its own that reads calm and reliable:
+blue-grey ink, a soft sky blue and a cool off-white, light and dark. No
+reds or oranges in the palette, so late and missed are the only warm
+colours on screen. (Berry, plum and coral, was built first and set aside
+as too brash.) The layout and type stay as they are; the
 MarshWorks credit in the footer stays as it is.
 
 ## Done when
 
-- [test] Every --color-* token in both theme blocks takes its Berry value.
+- [test] Every --color-* token in both theme blocks takes its Slate value.
       Text on its background meets WCAG AA (4.5:1 body, 3:1 large text and
       icons) in light and dark. An existing or new contrast test checks this.
 - [check] The 72 hard-coded colours in styles.css are each either moved to
       a token or kept on purpose with a comment (the food stays kibble-tan).
       None still reads as espresso or yellow.
 - [test] Status colours stay distinct from the accent: "late" (warning) and
-      "missed" (danger) don't read as coral. The test checks hue distance,
+      "missed" (danger) don't read as the accent. The test checks hue distance,
       not just contrast.
 - [test] Small / medium / large portion colours stay distinct from each
       other in both themes.
 - [check] The header P mark, icon.svg, logo.svg, the manifest's
-      theme_color and theme.js's status-bar colours use Berry, so the home-
+      theme_color and theme.js's status-bar colours use Slate, so the home-
       screen icon and browser chrome match the app.
 - [check] The bar over the bowl picture stays readable over a real photo
       in light and dark.
