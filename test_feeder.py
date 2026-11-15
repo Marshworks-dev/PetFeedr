@@ -1293,7 +1293,8 @@ class TestGrazingDisplay(TempCwd):
         super().setUp()
         self.now = datetime.now().replace(second=0, microsecond=0)
         self.slot_dt = self.now - timedelta(minutes=10)
-        if self.slot_dt.date() != self.now.date():
+        # The graze runs 20 minutes from its slot; that must end today too
+        if self.slot_dt.date() != (self.slot_dt + timedelta(minutes=20)).date():
             self.skipTest("too close to midnight")
         self.slot = self.slot_dt.strftime("%H:%M")
         with open('feeding_schedules.txt', 'w') as f:
@@ -1556,7 +1557,9 @@ class TestGraze(TempCwd):
         self.assertEqual(feeder_core.slot_outcome('17:30', self.today, [], lines), ('fed', None))
 
     def test_scheduled_graze_starts_in_background(self):
-        with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed:
+        # Pinned: the real check reads the clock, and after 23:40 any graze crosses midnight
+        with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed, \
+             patch('feeder_core.graze_crosses_midnight', return_value=False):
             self.assertTrue(feeder_core.scheduled_feed('large', '17:30', '17:34', graze=True))
         start.assert_called_once_with('large', '17:30', '17:34')
         feed.assert_not_called()
@@ -1575,7 +1578,8 @@ class TestGraze(TempCwd):
         feeder_core.save_todays_schedule([{'base_time': slot, 'actual_time': slot, 'portion': 'small',
                                            'is_fixed': True, 'randomized': False, 'graze': True}])
         with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed, \
-             patch('feeder_core.notify.send'):
+             patch('feeder_core.notify.send'), \
+             patch('feeder_core.graze_crosses_midnight', return_value=False):
             self.assertEqual(feeder_core.catch_up_missed(), [slot])
         self.assertEqual(start.call_args.kwargs['late_by_min'], 5)
         feed.assert_not_called()
