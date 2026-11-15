@@ -1471,6 +1471,23 @@ def _element_html(page, element_id, tag=None):
     return '\n'.join([lines[l1 - 1][c1:]] + lines[l1:l2 - 1] + [lines[l2 - 1][:c2]])
 
 
+class TestShipGrazeGuard(unittest.TestCase):
+    def test_guard_covers_the_whole_graze(self):
+        # It was hardcoded to 21 minutes; grazes went to 30 and the guard didn't follow
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = os.path.join(here, 'ship.sh')
+        with open(script) as f:
+            body = f.read()
+        self.assertNotRegex(body, r'GRAZE_GUARD_MIN=\d')
+        guard = body[body.index('GRAZE_SPAN_S=$('):body.index('GRAZE_GUARD_MIN=$((')]
+        import subprocess
+        # $0 is "bash" here, so the script's dirname is the working directory
+        out = subprocess.run(['bash', '-c', guard + 'echo "$GRAZE_SPAN_S"'], cwd=here,
+                             capture_output=True, text=True)
+        from servo_controller import GRAZE_SPAN_S
+        self.assertEqual(out.stdout.strip(), str(GRAZE_SPAN_S))
+
+
 class TestHopperPanel(TempCwd):
     """The hopper in the header is the feed button; Today's bar shows extras."""
 

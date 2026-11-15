@@ -14,7 +14,11 @@ set -euo pipefail
 : "${PI_HOST:?Set PI_HOST=user@host (env or .deploy.env)}"
 PI_PATH="${PI_PATH:-/home/${PI_HOST%@*}/PetFeedr}"
 FEED_GUARD_MIN=3  # a restart this close to a feed races it (catch-up covers it, but why test that)
-GRAZE_GUARD_MIN=21  # a graze runs 20 min after its slot; a restart mid-graze drops the rest
+# A restart mid-graze drops the rest of it: hold off for the whole span (read
+# from servo_controller.py so a span change can't leave this behind) plus a minute
+GRAZE_SPAN_S=$(sed -n 's/^GRAZE_SPAN_S = \([0-9]*\).*/\1/p' "$(dirname "$0")/servo_controller.py")
+[ -n "$GRAZE_SPAN_S" ] || { echo "ship.sh: GRAZE_SPAN_S not found in servo_controller.py" >&2; exit 1; }
+GRAZE_GUARD_MIN=$(( GRAZE_SPAN_S / 60 + 1 ))
 cd "$(dirname "$0")"
 
 say()  { printf '\n\033[1m▸ %s\033[0m\n' "$*"; }
