@@ -27,6 +27,10 @@ Nothing else about the page changes.
 
 ## Out of scope
 
+- The link to https://marshworks.dev: wanted, but held until that
+  site's HTTPS certificate works (it fails today). It then opens in a
+  new tab with rel="noopener noreferrer", so the app stays put and the
+  feeder's address isn't sent as the referrer.
 - The logo/P rebrand (shelved) and the app's colours.
 - A sync script. Re-copying the one SVG is a single `cp`. It gets a
   script when the kit changes often enough to need one.
