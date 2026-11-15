@@ -52,7 +52,10 @@ function renderGauge(hopper) {
     requestAnimationFrame(() => {
         $('.hopper-fill', gauge).style.transform = `translateY(${INTERIOR * (1 - level)}px)`;
     });
-    $('#hopper-badge').textContent = hopper.learning ? '?' : `${hopper.pct}%`;
+    // Still learning: no level to show, and the panel explains why
+    const badge = $('#hopper-badge');
+    badge.hidden = Boolean(hopper.learning);
+    badge.textContent = hopper.learning ? '' : `${hopper.pct}%`;
     $('#hopper-button').setAttribute('aria-label', hopper.learning
         ? 'Feed, and the hopper (still learning how much it holds)'
         : `Feed, and the hopper: about ${hopper.pct} percent full`);

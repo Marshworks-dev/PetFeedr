@@ -1540,6 +1540,14 @@ class TestHopperPanel(TempCwd):
                 rel = '/' + os.path.relpath(os.path.join(root, name), here).replace(os.sep, '/')
                 self.assertIn(rel, cached, f'{rel} is not precached')
 
+    def test_learning_hopper_shows_no_bare_question_mark(self):
+        # Before the first refill there's no level; a lone "?" told nobody anything
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/cards/hopper.js')) as f:
+            body = f.read()
+        self.assertIn('badge.hidden = Boolean(hopper.learning)', body)
+        self.assertNotIn("'?'", body)
+
     def test_pour_only_follows_a_change_and_respects_reduced_motion(self):
         here = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(here, 'static/js/pour.js')) as f:
