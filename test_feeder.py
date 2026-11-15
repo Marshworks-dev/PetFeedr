@@ -1293,8 +1293,8 @@ class TestGrazingDisplay(TempCwd):
         super().setUp()
         self.now = datetime.now().replace(second=0, microsecond=0)
         self.slot_dt = self.now - timedelta(minutes=10)
-        # The graze runs 20 minutes from its slot; that must end today too
-        if self.slot_dt.date() != (self.slot_dt + timedelta(minutes=20)).date():
+        # The graze runs 30 minutes from its slot; that must end today too
+        if self.slot_dt.date() != (self.slot_dt + timedelta(minutes=30)).date():
             self.skipTest("too close to midnight")
         self.slot = self.slot_dt.strftime("%H:%M")
         with open('feeding_schedules.txt', 'w') as f:
@@ -1311,7 +1311,7 @@ class TestGrazingDisplay(TempCwd):
             f.writelines(json.dumps(e) + '\n' for e in evs)
 
     def _until_12h(self):
-        return (self.slot_dt + timedelta(minutes=20)).strftime("%I:%M %p").lstrip("0")
+        return (self.slot_dt + timedelta(minutes=30)).strftime("%I:%M %p").lstrip("0")
 
     def test_running_graze_shows_grazing_on_timeline_and_feed_card(self):
         import web_interface
@@ -1329,7 +1329,7 @@ class TestGrazingDisplay(TempCwd):
     def test_finished_graze_reads_fed_and_clears_the_note(self):
         import web_interface
         self._write(self._ev('graze_pulse', self.slot_dt, pulse=1, of=4),
-                    self._ev('dispense', self.slot_dt + timedelta(minutes=20), source='graze', cups=0.5))
+                    self._ev('dispense', self.slot_dt + timedelta(minutes=30), source='graze', cups=0.5))
         state = _api_state(web_interface)
         self.assertEqual(state['timeline']['slots'][0]['status'], 'fed')
         self.assertEqual(state['feed']['grazing_label'], '')
@@ -1346,7 +1346,7 @@ class TestGrazingDisplay(TempCwd):
     def test_graze_with_no_closing_record_stops_showing_after_its_span(self):
         import dashboard
         pulse = self._ev('graze_pulse', self.slot_dt, pulse=1, of=4)
-        end = self.slot_dt + timedelta(minutes=20)
+        end = self.slot_dt + timedelta(minutes=30)
         self.assertEqual(dashboard.grazing_until(self.slot, [pulse], end), end)
         late = end + timedelta(minutes=dashboard.GRAZING_STALE_MIN + 1)
         self.assertIsNone(dashboard.grazing_until(self.slot, [pulse], late))
@@ -1486,7 +1486,7 @@ class TestGraze(TempCwd):
             self.assertTrue(feeder_core.run_graze('medium', '17:30', '17:30', sleep=fake_sleep))
 
         self.assertEqual(jiggles, [True, False, True, False])
-        self.assertEqual(sleeps, [400.0, 400.0, 400.0])  # first pulse at the slot, last at +20 min
+        self.assertEqual(sleeps, [600.0, 600.0, 600.0])  # first pulse at the slot, last at +30 min
         self.assertEqual(lock_free, [True, True, True])
         completed = [l for l in logs.output if 'Feeding completed' in l]
         self.assertEqual(len(completed), 1)
@@ -1557,7 +1557,7 @@ class TestGraze(TempCwd):
         self.assertEqual(feeder_core.slot_outcome('17:30', self.today, [], lines), ('fed', None))
 
     def test_scheduled_graze_starts_in_background(self):
-        # Pinned: the real check reads the clock, and after 23:40 any graze crosses midnight
+        # Pinned: the real check reads the clock, and after 23:30 any graze crosses midnight
         with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed, \
              patch('feeder_core.graze_crosses_midnight', return_value=False):
             self.assertTrue(feeder_core.scheduled_feed('large', '17:30', '17:34', graze=True))
@@ -1587,7 +1587,7 @@ class TestGraze(TempCwd):
     def test_graze_crossing_midnight_is_detected(self):
         d = self.today
         self.assertTrue(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:50", "%H:%M").time())))
-        self.assertFalse(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:39", "%H:%M").time())))
+        self.assertFalse(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:29", "%H:%M").time())))
 
     def test_late_graze_slot_feeds_all_at_once(self):
         # Pulses after midnight would mark tomorrow's 23:50 as fed — every other day unfed

@@ -18,8 +18,8 @@ function chipLabel(row) {
 
 function grazeLabel(row) {
     return row.graze
-        ? `Grazes over 20 minutes. Tap to feed ${row.time} all at once`
-        : `Feeds all at once. Tap to spread ${row.time} over 20 minutes`;
+        ? `Grazes over 30 minutes. Tap to feed ${row.time} all at once`
+        : `Feeds all at once. Tap to spread ${row.time} over 30 minutes`;
 }
 
 function rowMarkup(row) {
