@@ -870,6 +870,22 @@ def _theme_tokens(css, selector):
     return dict(re.findall(r'--(color-[a-z-]+):\s*(#[0-9a-fA-F]{6})\s*;', block))
 
 
+def _luminance(hex_colour):
+    """WCAG relative luminance of a #rrggbb colour."""
+    channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+    linear = [c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def _hue_gap(a, b):
+    """Degrees between two #rrggbb colours' hues, 0-180."""
+    import colorsys
+    def hue(c):
+        return colorsys.rgb_to_hls(*(int(c[i:i + 2], 16) / 255 for i in (1, 3, 5)))[0] * 360
+    gap = abs(hue(a) - hue(b)) % 360
+    return min(gap, 360 - gap)
+
+
 def _contrast(fg, bg):
     """WCAG contrast ratio of two #rrggbb colours."""
     def luminance(hex_colour):
@@ -880,8 +896,9 @@ def _contrast(fg, bg):
     return (light + 0.05) / (dark + 0.05)
 
 
-class TestKibbleLook(unittest.TestCase):
-    """The Kibble palette: readable text in both themes, and no teal left over."""
+class TestBerryLook(unittest.TestCase):
+    """The Berry palette: readable text in both themes, status colours that
+    don't read as the accent, and no teal or Kibble left over."""
 
     # (text, background) token pairs the dashboard actually draws
     TEXT_PAIRS = [
@@ -921,6 +938,48 @@ class TestKibbleLook(unittest.TestCase):
             body = f.read()
         self.assertIn("document.querySelector('dialog[open]')", body)
         self.assertIn('host.appendChild(container)', body)
+
+    def test_status_colours_dont_read_as_the_accent(self):
+        # Coral sits next to red on the wheel: "late" and "missed" must stay
+        # clear of it by hue, not just by contrast
+        for theme, tokens in self.themes.items():
+            for status in ('color-warning', 'color-danger'):
+                gap = _hue_gap(tokens[status], tokens['color-accent'])
+                self.assertGreaterEqual(gap, 20, f'{theme}: {status} is {gap:.0f}° from the accent')
+
+    def test_hue_gap_catches_red_beside_coral(self):
+        # Breaker: Kibble's dark danger beside Berry's dark coral
+        self.assertLess(_hue_gap('#ff8a80', '#ff8a7a'), 20)
+        self.assertAlmostEqual(_hue_gap('#ff0000', '#00ffff'), 180, places=0)
+
+    def test_portion_colours_step_down_in_lightness(self):
+        # Small, medium, large read apart without colour vision
+        for theme, tokens in self.themes.items():
+            sizes = [tokens[f'color-portion-{s}'] for s in ('small', 'medium', 'large')]
+            for lighter, darker in zip(sizes, sizes[1:]):
+                self.assertGreater(_luminance(lighter), _luminance(darker), f'{theme}: {lighter} vs {darker}')
+                self.assertGreaterEqual(_contrast(lighter, darker), 1.3, f'{theme}: {lighter} vs {darker}')
+
+    def test_kibble_colours_are_gone(self):
+        # The food keeps its kibble-tan; the espresso, cream and yellow go
+        here = os.path.dirname(os.path.abspath(__file__))
+        old = ('#faf4ea', '#2b1d14', '#f2b632', '#1a130e', '#e8762c', '#fffaf2', '43, 29, 20', '43,29,20')
+        for rel in ('static/styles.css', 'static/icon.svg', 'static/logo.svg',
+                    'static/manifest.json', 'templates/index.html',
+                    'static/js/theme.js', 'static/js/cards/next.js'):
+            with open(os.path.join(here, rel)) as f:
+                body = f.read().lower()
+            for colour in old:
+                self.assertNotIn(colour, body, f'{rel} still has {colour}')
+
+    def test_chrome_colour_matches_the_page(self):
+        # The status bar takes --color-bg; a stale one shows as a band at the top
+        import re
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/theme.js')) as f:
+            chrome = dict(re.findall(r"(light|dark): '(#[0-9a-f]{6})'", f.read()))
+        self.assertEqual(chrome['light'], self.themes['light']['color-bg'])
+        self.assertEqual(chrome['dark'], self.themes['dark']['color-bg'])
 
     def test_old_teal_and_coral_are_gone(self):
         here = os.path.dirname(os.path.abspath(__file__))

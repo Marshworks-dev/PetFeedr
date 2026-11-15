@@ -25,43 +25,46 @@
 
 /* ===== CSS Variables ===== */
 :root {
-    /* Kibble: cream and espresso with the MarshWorks yellow and orange.
-       --color-primary is the strong colour (espresso in light, yellow in
-       dark); --color-on-primary is the text that sits on it */
-    --color-bg: #faf4ea;
-    --color-bg-warm: #f3e8d6;
-    --color-surface: #fffaf2;
-    --color-text: #2b1d14;
-    --color-text-muted: #6b5646;
-    --color-primary: #2b1d14;
-    --color-primary-dark: #1a110b;
-    --color-on-primary: #faf4ea;
-    --color-accent: #e8762c;
-    --color-accent-dark: #a8461a;
-    --color-brand: #f2b632;
-    --color-on-brand: #2b1d14;
-    --color-brand-soft: #fbe7b5;
-    /* The pour: falling kibble and the spark it lands with */
+    /* Berry: plum ink, a coral accent and a soft pink-white. PetFeedr's own
+       palette (Kibble borrowed MarshWorks' espresso and yellow).
+       --color-primary is the strong colour (plum in light, coral in dark);
+       --color-on-primary is the text that sits on it */
+    --color-bg: #fbf6f7;
+    --color-bg-warm: #f5ecef;
+    --color-surface: #ffffff;
+    --color-text: #2a1a2e;
+    --color-text-muted: #6e5a70;
+    --color-primary: #5b2a6e;
+    --color-primary-dark: #431d52;
+    --color-on-primary: #ffffff;
+    --color-accent: #f0604f;
+    --color-accent-dark: #b8392b;
+    --color-brand: #f0604f;
+    --color-on-brand: #2a1a2e;
+    --color-brand-soft: #ffe1dc;
+    /* The pour: falling kibble and the spark it lands with. The food stays
+       kibble-tan in every palette, because it's food */
     --kibble: #b8742f;
     --kibble-shade: #7a4a22;
-    --spark: #e8a21a;
-    --spark-glow: rgba(242, 182, 50, 0.6);
-    --color-emphasis: #8a5a12;
-    --color-ink: #2b1d14;
-    --color-on-ink: #faf4ea;
+    --spark: #ff8a7a;
+    --spark-glow: rgba(255, 138, 122, 0.55);
+    --color-emphasis: #8a2f6e;
+    --color-ink: #2a1a2e;
+    --color-on-ink: #fbf6f7;
     --color-success: #3f7d4a;
     --color-warning: #c77d06;
-    --color-danger: #b3261e;
+    /* Crimson, not red: plain red sits too close to the coral accent */
+    --color-danger: #b0123f;
     --color-on-danger: #ffffff;
 
     /* Portion sizes step down in lightness, so they read apart without colour */
-    --color-portion-small: #f2b632;
-    --color-portion-medium: #e8762c;
-    --color-portion-large: #8f2d1c;
+    --color-portion-small: #ffb3a7;
+    --color-portion-medium: #f0604f;
+    --color-portion-large: #8a2f6e;
 
-    --shadow-sm: 0 1px 2px rgba(43,29,20,0.06);
-    --shadow-md: 0 4px 12px rgba(43,29,20,0.1);
-    --shadow-lg: 0 8px 30px rgba(43,29,20,0.14);
+    --shadow-sm: 0 1px 2px rgba(42,26,46,0.06);
+    --shadow-md: 0 4px 12px rgba(42,26,46,0.1);
+    --shadow-lg: 0 8px 30px rgba(42,26,46,0.14);
 
     --radius-sm: 10px;
     --radius-md: 14px;
@@ -69,8 +72,8 @@
 
     --card-padding: clamp(0.75rem, 1.5vw, 1.25rem);
 
-    --color-border: #e6d8c2;
-    --color-border-light: #efe4d2;
+    --color-border: #eadde6;
+    --color-border-light: #f2e8ee;
     --color-input-bg: #ffffff;
 
     --color-card-schedule: var(--color-primary);
@@ -90,37 +93,37 @@
 
 /* ===== Dark Mode ===== */
 [data-theme="dark"] {
-    --color-bg: #1a130e;
-    --color-bg-warm: #140f0b;
-    --color-surface: #251b14;
-    --color-text: #f6ecdf;
-    --color-text-muted: #c9b6a2;
-    --color-primary: #f2b632;
-    --color-primary-dark: #d99a14;
-    --color-on-primary: #1a130e;
-    --color-accent: #e8762c;
-    --color-accent-dark: #f0955a;
-    --color-brand: #f2b632;
-    --color-on-brand: #1a130e;
-    --color-brand-soft: #3d2e14;
+    --color-bg: #17111a;
+    --color-bg-warm: #120d14;
+    --color-surface: #221a26;
+    --color-text: #f6eef7;
+    --color-text-muted: #c2b0c6;
+    --color-primary: #ff8a7a;
+    --color-primary-dark: #f0604f;
+    --color-on-primary: #17111a;
+    --color-accent: #ff8a7a;
+    --color-accent-dark: #ffa99c;
+    --color-brand: #ff8a7a;
+    --color-on-brand: #17111a;
+    --color-brand-soft: #3a2030;
     --kibble: #c98a45;
     --kibble-shade: #8a5a2c;
-    --spark: #f6d27a;
-    --spark-glow: rgba(246, 210, 122, 0.55);
-    --color-emphasis: #f2b632;
-    --color-ink: #2e2219;
-    --color-on-ink: #f6ecdf;
+    --spark: #ffb3a7;
+    --spark-glow: rgba(255, 179, 167, 0.5);
+    --color-emphasis: #ffb3a7;
+    --color-ink: #2a2030;
+    --color-on-ink: #f6eef7;
     --color-success: #7cc48a;
-    /* Orange, not yellow: yellow is "fed" in dark, and late must read apart */
-    --color-warning: #f0955a;
-    --color-danger: #ff8a80;
-    --color-on-danger: #1a130e;
-    --color-portion-small: #f6d27a;
-    --color-portion-medium: #e8762c;
-    --color-portion-large: #b8402a;
-    --color-border: #3d2f23;
-    --color-border-light: #30251c;
-    --color-input-bg: #2e2219;
+    /* Amber, not orange: coral is "fed" in dark, and late must read apart */
+    --color-warning: #f5b14c;
+    --color-danger: #ff6f9b;
+    --color-on-danger: #17111a;
+    --color-portion-small: #ffc2b8;
+    --color-portion-medium: #ff8a7a;
+    --color-portion-large: #e0507a;
+    --color-border: #3a2d3e;
+    --color-border-light: #2e2432;
+    --color-input-bg: #2a2030;
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
     --shadow-lg: 0 8px 30px rgba(0,0,0,0.5);
@@ -999,7 +1002,7 @@ body {
     padding: 2px 4px;
     border-radius: 999px;
     white-space: nowrap;
-    color: #2b1d14;  /* espresso on the amber badge, both themes */
+    color: #2a1a2e;  /* plum ink on the amber badge, both themes */
     background: var(--color-warning);
     pointer-events: none;
 }
@@ -1993,7 +1996,7 @@ body {
     font-weight: 600;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba(243, 156, 18, 0.15);
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
     color: var(--color-text);
     white-space: nowrap;
 }
@@ -2019,7 +2022,7 @@ body {
 }
 
 .hopper-svg-empty { fill: var(--color-bg); }
-.hopper-svg-fill { fill: #c8894a; }
+.hopper-svg-fill { fill: #c8894a; }  /* the food in the hopper: kibble-tan on purpose */
 .hopper-svg.is-low .hopper-svg-fill { fill: var(--color-warning); }
 .kibble-dot { fill: rgba(0, 0, 0, 0.16); }
 
@@ -2430,13 +2433,13 @@ body:has(.sheet[open]) {
     bottom: 0.5rem;
     padding: 0.2rem 0.55rem;
     border-radius: 999px;
-    background: rgba(43, 29, 20, 0.88);
-    color: #faf4ea;
+    background: rgba(42, 26, 46, 0.88);
+    color: #fbf6f7;
     font-size: var(--fs-xs);
     font-weight: 600;
 }
 
-.bowl-chip.is-offline { background: #9b1c1c; }
+.bowl-chip.is-offline { background: #8f1036; }
 
 /* Over a picture the card shrinks to a bar across its top. The espresso
    backing is dense enough to keep cream text above 4.5:1 even over a white
@@ -2455,12 +2458,12 @@ body:has(.sheet[open]) {
     column-gap: 0.6rem;
     padding: 0.4rem 0.9rem;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    background: rgba(43, 29, 20, 0.86);
+    background: rgba(42, 26, 46, 0.86);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     box-shadow: none;
     border: 0;
-    color: #faf4ea;
+    color: #fbf6f7;
     text-align: left;
     /* Nothing in the bar is tappable; taps reach the picture under it */
     pointer-events: none;
@@ -2535,7 +2538,7 @@ body:has(.sheet[open]) {
     [data-theme="dark"] .hero.has-picture .next-feeding-card {
         /* Frosted glass: a heavy blur melts the picture into soft colour, the
            espresso is only a tint, and a thin light edge catches the top and bottom */
-        background: rgba(43, 29, 20, 0.7);
+        background: rgba(42, 26, 46, 0.7);
         -webkit-backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
         backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
         border-bottom: 1px solid rgba(255, 255, 255, 0.2);
@@ -2659,10 +2662,9 @@ body:has(.bowl-full[open]) { overflow: hidden; }
     font-size: var(--fs-sm);
     font-weight: 600;
     /* Darker than --color-danger, which is 3.8:1 on the card at this size */
-    color: #b3261e;
+    color: var(--color-danger);
 }
 
-[data-theme="dark"] .lock-error { color: #ff8a80; }
 
 .lock-actions {
     display: flex;

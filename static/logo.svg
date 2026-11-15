@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="56 56 400 400">
-  <!-- PetFeedr mark: an espresso P cut from a yellow disc -->
-  <circle cx="256" cy="256" r="200" fill="#f2b632"/>
-  <path d="M196 372 V146 H272 A78 78 0 0 1 272 302 H196" fill="none" stroke="#2b1d14" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- PetFeedr mark: a plum P cut from a coral disc -->
+  <circle cx="256" cy="256" r="200" fill="#f0604f"/>
+  <path d="M196 372 V146 H272 A78 78 0 0 1 272 302 H196" fill="none" stroke="#2a1a2e" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
