@@ -1712,20 +1712,16 @@ body {
     display: contents;
 }
 
-/* "Made by" + the MarshWorks logo: one unit, so a narrow screen moves it to its own line whole */
+/* "Made by" + the MarshWorks logo: always its own centred line under the
+   status, so no divider ever dangles at a wrap (with a last-fed time the
+   status line fills a phone anyway) */
 .footer-credit {
+    flex-basis: 100%;
     display: inline-flex;
+    justify-content: center;
     align-items: center;
     gap: 0.3em;
     white-space: nowrap;
-}
-
-/* The dot before the credit wraps with it, so a new line never starts with one.
-   Only once status items are drawn: before the first state, the credit stands alone */
-.status-items:has(.footer-item) + .footer-credit::before {
-    content: "·";
-    opacity: 0.3;
-    margin-right: 0.2em;
 }
 
 .footer-credit img {
