@@ -89,12 +89,13 @@ smoke() {
 }
 
 # A PR opened seconds ago has no checks yet, and `gh pr checks --watch` reads
-# "no checks reported" as a failure. Wait for the run to show up first.
+# "no checks reported" as a failure. Wait for the run to show up first;
+# gh's own errors (expired login, no network) stay visible while it polls.
 CI_POLL_SEC="${CI_POLL_SEC:-5}"
 CI_POLL_TRIES="${CI_POLL_TRIES:-24}"
 wait_for_ci() {
     local n=0
-    until [ "$(gh pr checks "$1" --json name -q length 2>/dev/null || echo 0)" -gt 0 ]; do
+    until [ "$(gh pr checks "$1" --json name -q length || echo 0)" -gt 0 ]; do
         n=$((n + 1))
         [ "$n" -lt "$CI_POLL_TRIES" ] || { echo "  no CI run appeared after $((CI_POLL_SEC * CI_POLL_TRIES))s" >&2; return 1; }
         sleep "$CI_POLL_SEC"

@@ -2461,12 +2461,14 @@ class TestShipWaitsForCI(unittest.TestCase):
         here = os.path.dirname(os.path.abspath(__file__))
         with open(os.path.join(here, 'ship.sh')) as f:
             fn = re.search(r'^wait_for_ci\(\) \{.*?^\}', f.read(), re.S | re.M).group(0)
+        import shutil
         tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
         gh = os.path.join(tmp, 'gh')
         with open(gh, 'w') as f:
             # Reports 0 checks until called N times, like a PR whose CI run hasn't registered
             f.write(f'''#!/bin/bash
-calls=$(( $(cat {tmp}/calls 2>/dev/null || echo 0) + 1 )); echo $calls > {tmp}/calls
+calls=$(( $(cat "{tmp}/calls" 2>/dev/null || echo 0) + 1 )); echo $calls > "{tmp}/calls"
 ready=$([ $calls -gt {checks_appear_after} ] && echo 1 || echo 0)
 case "$*" in
   *--watch*) [ $ready = 1 ] || {{ echo "no checks reported" >&2; exit 1; }}; echo watched;;
