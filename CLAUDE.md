@@ -97,7 +97,7 @@ Key invariants:
 **`feeding_schedules.txt`** — one entry per line: `HH:MM,portion[,fixed][,graze]`
 - `portion`: `small` | `medium` | `large` (1/2/3 dispense cycles)
 - `fixed`: optional; omit to enable randomization
-- `graze`: optional; dispense as 50-step pulses over 20 min on a background
+- `graze`: optional; dispense as 50-step pulses over 30 min on a background
   thread (`feeder_core.run_graze`), lock held per pulse only. One
   "Feeding completed" line at the end (`, graze`); each pulse is journaled
   so a restart mid-graze records what came out (`reconcile_grazes`) and
