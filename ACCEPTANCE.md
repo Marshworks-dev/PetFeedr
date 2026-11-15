@@ -1,47 +1,66 @@
-# Grazes get room: spacing and a midnight cutoff
+# Graze trail, and the hopper becomes the feed button
 
-Status: shipped
+Status: draft
 
-Intent: A graze needs its whole window to itself, and that window has to
-end before midnight. The window is the 30-minute graze plus the slot's
-±30 variation when it has one. The schedule editor refuses a setup that
-breaks this and says why in plain words, instead of the feeder quietly
-feeding all at once or stacking two meals in the bowl.
+Intent: A graze reads as what it is, a meal spread out over time, on Today's
+bar and the 7-day chart. The hopper moves to the top of the screen and
+becomes the way you feed by hand. When food comes out while the app is open,
+you see it fall from the hopper and land on Today's bar, then the right node
+fills. Two commits: the trail first, then the hopper.
 
 ## Done when
-- [test] A graze's set time must be before 23:30 when Fixed and before
-      23:00 when ±30 (its last pulse lands 30 minutes after the start and
-      must still be dated today). Turning Graze on, or switching a graze
-      from Fixed to ±30, past that time is refused (409) with a message
-      that names the cutoff. (Adds can't create a graze, so they only
-      face the spacing rule.)
-- [test] When either slot is a graze, two set times must be at least
-      40 minutes apart (30 for the graze plus the existing 10-minute
-      buffer). An add or a Graze toggle that breaks this is refused (409)
-      with a message naming the slot it clashes with.
-- [test] The daily randomizer treats a graze as busy from its start to
-      30 minutes later when checking the 10-minute buffer, so two ±30
-      slots never roll into each other. When it can't find a clear time,
-      it uses the set time, as now.
-- [test] A ±30 roll never crosses midnight in either direction. A 23:45
-      slot can't become 00:05. Today only backward rolls are clamped
-      (feeder_core.py:246).
-- [check] In the schedule editor, the Graze chip on a row that can't
-      graze reads as unavailable. Tapping it shows the reason ("A graze
-      needs 30 minutes before midnight. Set this one to Fixed, or move
-      it before 11:00 PM."), and its aria-label says the same.
-      A refused add shows the server's message as the toast.
-- [test] A schedule already saved with a rule-breaking graze still loads
-      and runs: past the cutoff it feeds all at once (the existing
-      fallback stays), and the editor shows the row with its reason.
-      Nothing is rewritten on disk.
-- [test] At least one unhappy-path test per rule above. All tests pass.
+
+Trail (commit 1)
+- [test] Today's state gives each graze slot its pulse count (small 2,
+      medium 4, large 6), how many have landed, and whether it was cut
+      short. These come from the pulse journal.
+- [check] On Today's bar, a graze is its head node followed by one crumb
+      for each pulse after the first. A crumb is filled once its pulse has
+      landed and hollow while it's still to come. A graze cut short ends
+      in a ✕. Crumbs are spaced evenly, not to scale, so the trail's
+      length shows the pulse count. This matches the trail mock
+      (2Tg2UFai…).
+- [test] The 7-day chart puts a graze at its slot's start, not at the time
+      it finished, and draws a smaller trail of crumbs. The legend gains a
+      "grazed" entry.
+- [test] A large graze in the day's last slot doesn't run off the end of
+      Today's bar. The bar's end is padded to fit it.
+- [test] Every node and crumb has a text equivalent ("5:30 PM graze, 2 of
+      4 pulses so far").
+
+Hopper (commit 2)
+- [check] The hopper sits top center in the header, on every view. Its
+      badge shows the level. Tapping it opens a panel with the controls
+      that today live in the Feed and Hopper cards: S/M/L, hold to feed,
+      extras left, pounds left, the refill-by date and Refilled. The panel
+      closes on an outside tap or Escape. It matches the pour mock
+      (UpTVab…).
+- [test] The Feed card and the Hopper card are gone. Their controls keep
+      their behavior: hold to feed, the daily cap, the cooldown, the
+      passcode gate and the refill form all work as now, and their
+      existing tests still pass.
+- [test] A manual or Porch feed shows on Today's bar as an extra node with
+      an orange ring, at the time it happened.
+- [check] While the app is open, a new dispense pours: food falls from the
+      hopper over the camera and sprinkles along Today's bar, the bar
+      charges up, and the charge converges into the node, which fills with
+      a burst. This covers a manual feed, a scheduled meal and each graze
+      pulse; a pulse is a lighter sprinkle into its crumb.
+- [test] The pour is triggered only by a change in state. A feed that
+      happened while the app was closed shows as already filled, with no
+      pour. A refresh or a second tab never pours the same feed twice.
+- [check] With reduced motion on, nothing falls or moves: the node simply
+      fills.
+- [check] Light and dark at phone width. The hopper button is at least
+      44 px, its label says the level and what tapping it does, and the
+      panel's focus moves in and back out correctly.
+- [test] At least one unhappy-path test for each new data field. All
+      tests pass.
 
 ## Out of scope
-- Showing each slot's window as a band in the editor (later, if the
-  messages aren't enough)
-- The graze trail on the timeline and 7-day chart (its own change)
-- The hopper redesign (its own change)
-- Changing the ±30 range, the 30-minute graze span, or the manual feed
-  cap and cooldown
-- Blocking a manual Feed while a graze runs (the existing note stays)
+- Live push (SSE or websockets). A pour shows up on the next state refresh,
+  as the page updates now.
+- Any change to the feed path, the manual cap or cooldown, the refill math,
+  or the camera
+- Pours on the 7-day chart
+- Sound or haptics
