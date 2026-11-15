@@ -906,8 +906,8 @@ def _contrast(fg, bg):
     return (light + 0.05) / (dark + 0.05)
 
 
-class TestBerryLook(unittest.TestCase):
-    """The Berry palette: readable text in both themes, status colours that
+class TestSlateLook(unittest.TestCase):
+    """The Slate palette: readable text in both themes, status colours that
     don't read as the accent, and no teal or Kibble left over."""
 
     # (text, background) token pairs the dashboard actually draws
@@ -950,15 +950,15 @@ class TestBerryLook(unittest.TestCase):
         self.assertIn('host.appendChild(container)', body)
 
     def test_status_colours_dont_read_as_the_accent(self):
-        # Coral sits next to red on the wheel: "late" and "missed" must stay
-        # clear of it by hue, not just by contrast
+        # "Late" and "missed" must stay clear of the accent by hue, not just
+        # by contrast (Berry's coral sat next to red on the wheel)
         for theme, tokens in self.themes.items():
             for status in ('color-warning', 'color-danger'):
                 gap = _hue_gap(tokens[status], tokens['color-accent'])
                 self.assertGreaterEqual(gap, 20, f'{theme}: {status} is {gap:.0f}° from the accent')
 
     def test_hue_gap_catches_red_beside_coral(self):
-        # Breaker: Kibble's dark danger beside Berry's dark coral
+        # Breaker: Kibble's dark danger beside Berry's dark coral, set aside for this
         self.assertLess(_hue_gap('#ff8a80', '#ff8a7a'), 20)
         self.assertAlmostEqual(_hue_gap('#ff0000', '#00ffff'), 180, places=0)
 

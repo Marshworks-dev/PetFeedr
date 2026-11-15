@@ -9,7 +9,7 @@ const NAMES = { auto: 'Auto', light: 'Light', dark: 'Dark' };
 const darkQuery = matchMedia('(prefers-color-scheme: dark)');
 // Page background per theme (--color-bg) — the browser chrome / status bar
 // area takes this color so it blends into the page
-const CHROME_COLOR = { light: '#fbf6f7', dark: '#17111a' };
+const CHROME_COLOR = { light: '#f4f6f8', dark: '#11161c' };
 
 function applyTheme(theme) {
     document.documentElement.setAttribute('data-theme', theme);
