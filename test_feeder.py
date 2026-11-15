@@ -1287,3 +1287,1173 @@ class TestGrazingDisplay(TempCwd):
         late = end + timedelta(minutes=dashboard.GRAZING_STALE_MIN + 1)
         self.assertIsNone(dashboard.grazing_until(self.slot, [pulse], late))
 
+
+class TestScheduledFeedIdempotent(TempCwd):
+    def setUp(self):
+        super().setUp()
+        schedule.clear()
+
+    def tearDown(self):
+        schedule.clear()
+        super().tearDown()
+
+    def test_unfed_slot_dispenses(self):
+        with patch('feeder_core.feed_pet', return_value=True) as mock_feed:
+            self.assertTrue(feeder_core.scheduled_feed('small', '03:00', '03:00'))
+        mock_feed.assert_called_once_with(portion='small', base_time='03:00', scheduled_for='03:00')
+
+    def test_slot_already_fed_today_is_skipped(self):
+        with open('feeding_events.jsonl', 'w') as f:
+            f.write(json.dumps({'ts': f'{date.today().isoformat()}T03:00:01', 'event': 'dispense',
+                                'scheduled_for': '03:00'}) + '\n')
+        with patch('feeder_core.feed_pet') as mock_feed:
+            self.assertFalse(feeder_core.scheduled_feed('small', '03:00', '03:00'))
+        mock_feed.assert_not_called()
+
+    def test_yesterdays_feed_does_not_block_today(self):
+        yesterday = (date.today() - timedelta(days=1)).isoformat()
+        with open('feeding_events.jsonl', 'w') as f:
+            f.write(json.dumps({'ts': f'{yesterday}T03:00:01', 'event': 'dispense',
+                                'scheduled_for': '03:00'}) + '\n')
+        with patch('feeder_core.feed_pet', return_value=True) as mock_feed:
+            feeder_core.scheduled_feed('small', '03:00', '03:00')
+        mock_feed.assert_called_once()
+
+    def test_power_cut_replay_does_not_double_feed(self):
+        # 2026-09-30: fed at 03:00, power cut, Pi boots on a clock 38 min slow.
+        # 03:00 looks upcoming again, gets registered, and fires when NTP jumps
+        # the clock forward. The motor must run once, not twice.
+        feeder_core.save_todays_schedule([{'base_time': '03:00', 'actual_time': '03:00',
+                                           'portion': 'small', 'is_fixed': True, 'randomized': False}])
+        with patch('feeder_core.trigger_servo', return_value=0.3) as motor, \
+             patch('feeder_core.notify.send'):
+            feeder_core.resync_today()
+            schedule.jobs[0].run()   # the real 03:00 feed, before the outage
+            feeder_core.resync_today()  # reboot on the stale clock re-registers it
+            schedule.jobs[0].run()   # clock jumps; the overdue job fires
+        self.assertEqual(motor.call_count, 1)
+
+
+class TestClockWait(unittest.TestCase):
+    def test_off_pi_returns_immediately(self):
+        sleeps = []
+        self.assertTrue(feeder_core.wait_for_clock_sync(is_pi=False, flag='/nonexistent', sleep=sleeps.append))
+        self.assertEqual(sleeps, [])
+
+    def test_already_synced_returns_immediately(self):
+        with tempfile.NamedTemporaryFile() as flag:
+            self.assertTrue(feeder_core.wait_for_clock_sync(is_pi=True, flag=flag.name,
+                                                            sleep=lambda s: self.fail("slept")))
+
+    def test_waits_until_flag_appears(self):
+        with tempfile.TemporaryDirectory() as d:
+            flag = os.path.join(d, 'synchronized')
+            ticks = []
+
+            def fake_sleep(seconds):
+                ticks.append(seconds)
+                if len(ticks) == 3:
+                    open(flag, 'w').close()
+
+            self.assertTrue(feeder_core.wait_for_clock_sync(
+                is_pi=True, flag=flag, sleep=fake_sleep, monotonic=lambda: len(ticks) * 5))
+            self.assertEqual(len(ticks), 3)
+
+    def test_timeout_proceeds_and_alerts(self):
+        ticks = []
+        with patch('feeder_core.notify.send') as mock_send:
+            synced = feeder_core.wait_for_clock_sync(
+                timeout_s=20, is_pi=True, flag='/nonexistent/flag',
+                sleep=ticks.append, monotonic=lambda: len(ticks) * 5)
+        self.assertFalse(synced)  # feeds anyway — no network must not mean no food
+        self.assertEqual(len(ticks), 4)
+        self.assertIn("without a synced clock", mock_send.call_args[0][0])
+
+
+class TestGraze(TempCwd):
+    """Graze: a portion dispensed as pulses spread over GRAZE_SPAN_S."""
+
+    def setUp(self):
+        super().setUp()
+        schedule.clear()
+        self.today = date.today()
+
+    def tearDown(self):
+        schedule.clear()
+        super().tearDown()
+
+    def _slot(self, slot='17:30'):
+        return feeder_core.slot_outcome(slot, self.today, *feeder_core.todays_records(self.today))
+
+    def test_schedule_line_round_trips_graze_flag(self):
+        import schedule_store
+        self.assertEqual(parse_schedule_line("17:30,medium,graze"), ("17:30", "medium", False, True))
+        self.assertEqual(parse_schedule_line("17:30,medium,graze,fixed"), ("17:30", "medium", True, True))
+        self.assertEqual(parse_schedule_line("08:00,fixed,graze"), ("08:00", "small", True, True))
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("07:00,medium\n17:30,medium,graze,fixed\n")
+        schedule_store.write_entries(schedule_store.read_entries())
+        with open('feeding_schedules.txt') as f:
+            self.assertEqual(f.read(), "07:00,medium\n17:30,medium,fixed,graze\n")
+
+    def test_pulses_add_up_to_the_regular_portion(self):
+        from servo_controller import graze_pulse_count, GRAZE_PULSE_STEPS, BASE_STEPS, get_portion_cycles
+        for portion, pulses in [('small', 2), ('medium', 4), ('large', 6)]:
+            self.assertEqual(graze_pulse_count(portion), pulses)
+            self.assertEqual(pulses * GRAZE_PULSE_STEPS, get_portion_cycles(portion) * BASE_STEPS)
+
+    def test_full_graze_spreads_pulses_and_records_once(self):
+        import events
+        jiggles, sleeps, lock_free = [], [], []
+
+        def fake_sleep(seconds):
+            sleeps.append(seconds)
+            # Between pulses another thread must be able to take the lock
+            # (a manual feed, a schedule edit) — it's never held across a gap
+            from threading import Thread
+            t = Thread(target=lambda: lock_free.append(feeder_core.STATE_LOCK.acquire(timeout=1)
+                                                       and feeder_core.STATE_LOCK.release() is None))
+            t.start()
+            t.join()
+
+        with patch('feeder_core.trigger_pulse', side_effect=lambda jiggle: jiggles.append(jiggle)), \
+             patch('feeder_core.notify.send'), \
+             self.assertLogs('petfeedr', 'INFO') as logs:
+            self.assertTrue(feeder_core.run_graze('medium', '17:30', '17:30', sleep=fake_sleep))
+
+        self.assertEqual(jiggles, [True, False, True, False])
+        self.assertEqual(sleeps, [400.0, 400.0, 400.0])  # first pulse at the slot, last at +20 min
+        self.assertEqual(lock_free, [True, True, True])
+        completed = [l for l in logs.output if 'Feeding completed' in l]
+        self.assertEqual(len(completed), 1)
+        self.assertIn('(medium portion, graze)', completed[0])
+        dispenses = [e for e in events.read_all() if e['event'] == 'dispense']
+        self.assertEqual(len(dispenses), 1)
+        self.assertEqual((dispenses[0]['cups'], dispenses[0]['source']), (0.5, 'graze'))
+        self.assertEqual(dispenses[0]['hopper_cups'], 0.5)
+        self.assertEqual(len([e for e in events.read_all() if e['event'] == 'graze_pulse']), 4)
+        self.assertEqual(self._slot(), ('fed', None))
+
+    def test_completed_line_parses_as_one_scheduled_style_feeding(self):
+        line = "2026-11-14 17:40:00,123 - INFO - Feeding completed in 600.12s (medium portion, graze)"
+        m = feeding_stats.COMPLETED_RE.match(line)
+        self.assertEqual((m['portion'], m['source']), ('medium', 'graze'))
+
+    def test_failed_pulse_stops_graze_and_records_partial(self):
+        import events
+        with patch('feeder_core.trigger_pulse', side_effect=[0.3, 0.3, RuntimeError("jam")]) as pulse, \
+             patch('feeder_core.notify.send') as mock_send:
+            self.assertFalse(feeder_core.run_graze('medium', '17:30', '17:30', sleep=lambda s: None))
+        self.assertEqual(pulse.call_count, 3)  # no grinding on after the jam
+        self.assertIn("FAILED", mock_send.call_args_list[0][0][0])
+        kinds = [e['event'] for e in events.read_all()]
+        self.assertEqual(kinds, ['graze_pulse', 'graze_pulse', 'failure', 'dispense'])
+        partial = events.read_all()[-1]
+        self.assertEqual((partial['cups'], partial['partial'], partial['pulses']), (0.25, True, 2))
+        self.assertEqual(self._slot(), ('failed', None))
+
+    def test_restart_mid_graze_records_what_came_out_and_never_refires(self):
+        import events, hopper
+        for n in (1, 2):  # the process died after pulse 2 of 4
+            events.record('graze_pulse', portion='medium', base_time='17:30',
+                          scheduled_for='17:30', pulse=n, of=4)
+        with patch('feeder_core.notify.send'), self.assertLogs('petfeedr', 'WARNING') as logs:
+            self.assertEqual(feeder_core.reconcile_grazes(self.today), ['17:30'])
+        self.assertIn('stopped after 2/4 pulses', logs.output[0])
+        self.assertNotIn('Feeding completed', logs.output[0])  # not a whole portion
+        partial = events.read_all()[-1]
+        self.assertEqual((partial['event'], partial['cups']), ('dispense', 0.25))
+        self.assertEqual(hopper.load_state()['cups_since_refill'], 0.25)
+        self.assertEqual(self._slot(), ('fed', None))
+        self.assertEqual(feeder_core.reconcile_grazes(self.today), [])  # idempotent
+
+        # The slot's job, if it ran again (clock jump), must not start another graze
+        with patch('feeder_core.start_graze') as start:
+            self.assertFalse(feeder_core.scheduled_feed('medium', '17:30', '17:30', graze=True))
+        start.assert_not_called()
+
+    def test_graze_under_way_counts_as_handled(self):
+        import events
+        events.record('graze_pulse', portion='small', base_time='17:30',
+                      scheduled_for='17:30', pulse=1, of=2)
+        self.assertEqual(self._slot(), ('fed', None))
+
+    def test_log_pulse_line_marks_slot_when_journal_is_missing(self):
+        stamp = f"{self.today.isoformat()} 17:30:01,100"
+        lines = [f"{stamp} - INFO - Graze pulse 1/4 for 17:30 slot\n"]
+        self.assertEqual(feeder_core.slot_outcome('17:30', self.today, [], lines), ('fed', None))
+        self.assertEqual(feeder_core.slot_outcome('07:00', self.today, [], lines), (None, None))
+
+    def test_graze_finishing_near_another_slot_does_not_claim_it(self):
+        # A 17:30 graze completes ~17:50; a 17:50 slot is still unfed
+        d = self.today.isoformat()
+        lines = [f"{d} 17:30:00,100 - INFO - Graze pulse 1/4 for 17:30 slot\n",
+                 f"{d} 17:50:02,100 - INFO - Feeding completed in 1202.00s (medium portion, graze)\n"]
+        self.assertEqual(feeder_core.slot_outcome('17:50', self.today, [], lines), (None, None))
+        self.assertEqual(feeder_core.slot_outcome('17:30', self.today, [], lines), ('fed', None))
+
+    def test_scheduled_graze_starts_in_background(self):
+        with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed:
+            self.assertTrue(feeder_core.scheduled_feed('large', '17:30', '17:34', graze=True))
+        start.assert_called_once_with('large', '17:30', '17:34')
+        feed.assert_not_called()
+
+    def test_resync_registers_graze_flag(self):
+        feeder_core.save_todays_schedule([{'base_time': '00:00', 'actual_time': '00:00',
+                                           'portion': 'small', 'is_fixed': True,
+                                           'randomized': False, 'graze': True}])
+        feeder_core.resync_today()
+        self.assertTrue(schedule.jobs[0].job_func.keywords['graze'])
+
+    def test_catch_up_grazes_a_missed_graze_slot(self):
+        slot = (datetime.now() - timedelta(minutes=5)).strftime("%H:%M")
+        if slot > datetime.now().strftime("%H:%M"):
+            self.skipTest("too close to midnight")
+        feeder_core.save_todays_schedule([{'base_time': slot, 'actual_time': slot, 'portion': 'small',
+                                           'is_fixed': True, 'randomized': False, 'graze': True}])
+        with patch('feeder_core.start_graze') as start, patch('feeder_core.feed_pet') as feed, \
+             patch('feeder_core.notify.send'):
+            self.assertEqual(feeder_core.catch_up_missed(), [slot])
+        self.assertEqual(start.call_args.kwargs['late_by_min'], 5)
+        feed.assert_not_called()
+
+    def test_graze_crossing_midnight_is_detected(self):
+        d = self.today
+        self.assertTrue(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:50", "%H:%M").time())))
+        self.assertFalse(feeder_core.graze_crosses_midnight(datetime.combine(d, datetime.strptime("23:39", "%H:%M").time())))
+
+    def test_late_graze_slot_feeds_all_at_once(self):
+        # Pulses after midnight would mark tomorrow's 23:50 as fed — every other day unfed
+        with patch('feeder_core.graze_crosses_midnight', return_value=True), \
+             patch('feeder_core.start_graze') as start, \
+             patch('feeder_core.feed_pet', return_value=True) as feed:
+            self.assertTrue(feeder_core.scheduled_feed('medium', '23:50', '23:50', graze=True))
+        start.assert_not_called()
+        feed.assert_called_once_with(portion='medium', base_time='23:50', scheduled_for='23:50')
+
+    def test_late_graze_catch_up_feeds_all_at_once(self):
+        feeder_core.save_todays_schedule([{'base_time': '23:50', 'actual_time': '23:50', 'portion': 'small',
+                                           'is_fixed': True, 'randomized': False, 'graze': True}])
+        now = datetime.combine(self.today, datetime.strptime("23:55", "%H:%M").time())
+        with patch('feeder_core.start_graze') as start, \
+             patch('feeder_core.feed_pet', return_value=True) as feed, \
+             patch('feeder_core.notify.send'):
+            self.assertEqual(feeder_core.catch_up_missed(now=now), ['23:50'])
+        start.assert_not_called()
+        self.assertEqual(feed.call_args.kwargs['late_by_min'], 5)
+
+
+class TestGrazeRoute(TempCwd):
+    def setUp(self):
+        super().setUp()
+        schedule.clear()
+        import web_interface
+        self.client = web_interface.app.test_client()
+        self.json = {'Accept': 'application/json'}
+
+    def tearDown(self):
+        schedule.clear()
+        super().tearDown()
+
+    def test_toggle_graze_keeps_todays_time(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("17:30,medium\n")
+        feeder_core.save_todays_schedule([{'base_time': '17:30', 'actual_time': '17:47',
+                                           'portion': 'medium', 'is_fixed': False, 'randomized': True}])
+        resp = self.client.post('/toggle_graze', data={'base_time': '17:30'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.get_json()['state']['schedule'][0]['graze'])
+        with open('feeding_schedules.txt') as f:
+            self.assertEqual(f.read(), "17:30,medium,graze\n")
+        (today,) = feeder_core.load_todays_schedule()
+        self.assertEqual((today['actual_time'], today['graze']), ('17:47', True))
+        self.client.post('/toggle_graze', data={'base_time': '17:30'}, headers=self.json)
+        with open('feeding_schedules.txt') as f:
+            self.assertEqual(f.read(), "17:30,medium\n")
+
+    def test_toggle_fixed_keeps_graze(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("17:30,medium,graze\n")
+        self.client.post('/toggle_fixed', data={'base_time': '17:30'}, headers=self.json)
+        with open('feeding_schedules.txt') as f:
+            self.assertEqual(f.read(), "17:30,medium,fixed,graze\n")
+        self.assertTrue(feeder_core.load_todays_schedule()[0]['graze'])
+
+    def test_toggle_graze_unknown_time_is_404(self):
+        resp = self.client.post('/toggle_graze', data={'base_time': '09:00'}, headers=self.json)
+        self.assertEqual(resp.status_code, 404)
+
+    def test_cross_origin_toggle_graze_refused(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("17:30,medium\n")
+        resp = self.client.post('/toggle_graze', data={'base_time': '17:30'},
+                                headers={**self.json, 'Origin': 'https://evil.example'})
+        self.assertEqual(resp.status_code, 403)
+        with open('feeding_schedules.txt') as f:
+            self.assertEqual(f.read(), "17:30,medium\n")
+
+
+JPEG = b'\xff\xd8\xff\xe0 a frame\xff\xd9'
+
+
+class FakeCamera:
+    """Stands in for the long-running ffmpeg: a pipe of frames.
+
+    `frames` are written up front; the pipe then stays open, like a live
+    stream between frames, until kill() or end() closes it."""
+
+    def __init__(self, frames=30, body=JPEG, garbage=b''):
+        read_fd, self._write_fd = os.pipe()
+        self.stdout = os.fdopen(read_fd, 'rb', buffering=0)
+        os.write(self._write_fd, body * frames + garbage)
+        self.killed = False
+
+    def end(self):
+        if self._write_fd is not None:
+            os.close(self._write_fd)
+            self._write_fd = None
+
+    def kill(self):
+        self.killed = True
+        self.end()
+
+    def wait(self, timeout=None):
+        return -9
+
+    def close(self):
+        self.end()
+        self.stdout.close()
+
+
+class CameraCase(TempCwd):
+    """A camera that exists: an ordinary file stands in for /dev/video0."""
+
+    def setUp(self):
+        super().setUp()
+        import camera
+        self.camera = camera
+        open('video0', 'w').close()
+        self.pause = MagicMock()
+        self.spawned = []
+        for p in (patch.object(camera, 'DEVICE', os.path.abspath('video0')),
+                  patch('camera.on_raspberry_pi', return_value=True),
+                  # The wait before a retry; no test sits through it
+                  patch.object(camera, '_pause', self.pause),
+                  patch.object(camera, '_stream', None),
+                  patch.object(camera, '_MIN_FRAME_BYTES', 0),   # the test frame is a few bytes
+                  # No test starts a real ffmpeg
+                  patch.object(camera, '_spawn', side_effect=AssertionError("no camera set up"))):
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(lambda: [c.close() for c in self.spawned])
+
+    def _cameras(self, *cameras):
+        """Each stream start gets the next of these; an exception is raised instead."""
+        queue = list(cameras)
+
+        def spawn():
+            nxt = queue.pop(0)
+            if isinstance(nxt, BaseException):
+                raise nxt
+            self.spawned.append(nxt)
+            return nxt
+
+        return patch.object(self.camera, '_spawn', side_effect=spawn)
+
+    def _frame(self, when, body=JPEG):
+        os.makedirs(self.camera.FRAMES_DIR, exist_ok=True)
+        path = os.path.join(self.camera.FRAMES_DIR, when.strftime(self.camera.NAME_FORMAT))
+        with open(path, 'wb') as f:
+            f.write(body)
+        return path
+
+
+class TestCamera(CameraCase):
+    def test_a_shot_saves_the_streams_newest_frame_named_by_local_time(self):
+        newest = b'\xff\xd8\xff\xe0 newest\xff\xd9'
+        cam = FakeCamera(frames=25)
+        os.write(cam._write_fd, newest)
+        cam.end()   # so the reader has seen every frame before the shot is taken
+        with self._cameras(cam):
+            self.assertFalse(self.camera.snap(False, datetime(2026, 11, 14, 16, 4, 30)))
+        with open(os.path.join('data', 'frames', '2026-11-14T160430.jpg'), 'rb') as f:
+            self.assertEqual(f.read(), newest)
+        self.assertEqual(os.listdir(self.camera.FRAMES_DIR), ['2026-11-14T160430.jpg'])  # no .part left
+
+    def test_stream_command_is_a_list_at_720p_from_the_camera(self):
+        argv = self.camera._stream_argv()
+        self.assertIsInstance(argv, list)   # no shell
+        self.assertEqual(argv[0], 'ffmpeg')
+        self.assertIn('1280x720', argv)
+        self.assertIn(self.camera.DEVICE, argv)
+        # Passed through, not re-encoded: that is what keeps it cheap on the Pi
+        self.assertEqual(argv[argv.index('-c') + 1], 'copy')
+
+    def test_one_stream_serves_every_shot(self):
+        # The webcam jams on stop-then-start, so a healthy stream is never restarted
+        with self._cameras(FakeCamera()) as spawn:
+            failing = False
+            for minute in (4, 9, 14):
+                failing = self.camera.snap(failing, datetime(2026, 11, 14, 16, minute, 30))
+        self.assertFalse(failing)
+        self.assertEqual(spawn.call_count, 1)
+        self.assertFalse(self.spawned[0].killed)
+        self.assertEqual(len(self.camera.frame_names()), 3)
+
+    def test_no_shot_from_a_stream_that_is_still_warming_up(self):
+        # The webcam opens dark; its first frames must not be saved
+        with patch.object(self.camera, 'START_WAIT_S', 0.2), \
+             self._cameras(FakeCamera(frames=self.camera.WARMUP_FRAMES - 1),
+                           FakeCamera(frames=self.camera.WARMUP_FRAMES - 1)), \
+             self.assertLogs('petfeedr', 'WARNING'):
+            self.assertTrue(self.camera.snap(False))
+        self.assertEqual(self.camera.frame_names(), [])
+
+    def test_a_stalled_stream_is_killed_and_restarted(self):
+        clock = [1000.0]
+        with patch.object(self.camera, '_now', side_effect=lambda: clock[0]), \
+             self._cameras(FakeCamera(), FakeCamera()) as spawn:
+            self.assertFalse(self.camera.snap(False, datetime(2026, 11, 14, 16, 4, 30)))
+            clock[0] += self.camera.STALL_AFTER_S + 1   # frames stopped arriving
+            self.assertFalse(self.camera.snap(False, datetime(2026, 11, 14, 16, 9, 30)))
+        self.assertEqual(spawn.call_count, 2)
+        self.assertTrue(self.spawned[0].killed)     # no stray process holding the webcam
+        self.assertFalse(self.spawned[1].killed)
+        self.assertEqual(len(self.camera.frame_names()), 2)
+
+    def test_a_stream_that_died_is_restarted(self):
+        dead = FakeCamera(frames=0)
+        dead.end()
+        with self._cameras(dead, FakeCamera()) as spawn, \
+             patch.object(self.camera.log, 'warning') as warning:
+            self.assertFalse(self.camera.snap(False))
+        warning.assert_not_called()
+        self.assertEqual(spawn.call_count, 2)
+        self.pause.assert_called_once_with(self.camera.RETRY_AFTER_S)   # a pause between tries
+        self.assertEqual(len(self.camera.frame_names()), 1)
+
+    def test_junk_on_the_stream_is_never_saved_as_a_frame(self):
+        junk = FakeCamera(frames=0, garbage=b'not a jpeg' * 5000)
+        junk.end()
+        with self._cameras(junk, FakeCamera(frames=0, garbage=b'\xff\xd9\xff\xd8' * 50)), \
+             patch.object(self.camera, 'START_WAIT_S', 0.2), \
+             patch.object(self.camera, '_MIN_FRAME_BYTES', 2048), \
+             self.assertLogs('petfeedr', 'WARNING'):
+            self.assertTrue(self.camera.snap(False))
+        self.assertEqual(self.camera.frame_names(), [])
+
+    def test_a_shot_every_five_minutes_just_ahead_of_the_mark(self):
+        nxt = self.camera.seconds_until_next_shot
+        on_the_hour = datetime(2026, 11, 14, 16, 0, 0).timestamp()
+        self.assertEqual(nxt(on_the_hour), 270)          # → 16:04:30
+        self.assertEqual(nxt(on_the_hour + 269), 1)
+        self.assertEqual(nxt(on_the_hour + 270), 300)    # just shot; next is 16:09:30
+        self.assertEqual(nxt(on_the_hour + 275), 295)
+
+    def test_loop_shoots_at_start_then_after_each_sleep(self):
+        order = []
+
+        def sleep(seconds):
+            order.append(('sleep', seconds))
+            if len(order) >= 6:
+                raise StopIteration
+
+        with patch.object(self.camera, 'snap', side_effect=lambda failing: order.append('snap') or False):
+            with self.assertRaises(StopIteration):
+                self.camera.run_forever(sleep=sleep, clock=lambda: 0.0)
+        self.assertEqual(order[:5], ['snap', ('sleep', 270), 'snap', ('sleep', 270), 'snap'])
+
+    def test_frames_older_than_14_days_are_pruned(self):
+        now = datetime(2026, 11, 14, 12, 0, 0)
+        old = self._frame(now - timedelta(days=14, minutes=1))
+        kept = self._frame(now - timedelta(days=13, hours=23))
+        with open(os.path.join(self.camera.FRAMES_DIR, 'notes.txt'), 'w') as f:
+            f.write("not a frame")
+        self.assertEqual(self.camera.prune(now), 1)
+        self.assertFalse(os.path.exists(old))
+        self.assertTrue(os.path.exists(kept))
+        # Only files named like frames are ever deleted
+        self.assertTrue(os.path.exists(os.path.join(self.camera.FRAMES_DIR, 'notes.txt')))
+
+    def test_each_tick_prunes(self):
+        now = datetime(2026, 11, 14, 12, 0, 0)
+        old = self._frame(now - timedelta(days=20))
+        with self._cameras(FakeCamera()):
+            self.assertFalse(self.camera.snap(False, now))
+        self.assertFalse(os.path.exists(old))
+        self.assertEqual(self.camera.frame_names(), ['2026-11-14T120000.jpg'])
+
+    def test_unplugged_camera_warns_once_per_outage_and_recovers(self):
+        os.remove('video0')
+        with self.assertLogs('petfeedr', 'INFO') as logs:
+            failing = False
+            for _ in range(3):
+                failing = self.camera.snap(failing)   # must not raise, starts nothing
+            self.assertTrue(failing)
+            open('video0', 'w').close()
+            with self._cameras(FakeCamera()):
+                failing = self.camera.snap(failing)
+        self.assertFalse(failing)
+        warnings = [r for r in logs.records if r.levelname == 'WARNING']
+        self.assertEqual(len(warnings), 1)
+        self.assertIn('Camera offline', warnings[0].getMessage())
+        self.assertEqual([r.getMessage() for r in logs.records if r.levelname == 'INFO'], ['Camera is back'])
+        self.assertEqual(len(self.camera.frame_names()), 1)
+
+    def test_a_stream_that_wont_start_warns_once_and_saves_nothing(self):
+        def dead():
+            cam = FakeCamera(frames=0)
+            cam.end()
+            return cam
+
+        for label, cameras in (("ffmpeg exits at once", [dead() for _ in range(4)]),
+                               ("ffmpeg not installed", [FileNotFoundError("ffmpeg")] * 2)):
+            with self.subTest(label), self.assertLogs('petfeedr', 'WARNING') as logs:
+                with self._cameras(*cameras):
+                    failing = self.camera.snap(self.camera.snap(False))
+                self.assertTrue(failing)
+                self.assertEqual(len(logs.records), 1)
+        self.assertEqual(self.camera.frame_names(), [])
+        # Nothing left running after a failed start
+        self.assertTrue(all(c.killed for c in self.spawned))
+
+    def test_a_bug_in_capture_is_logged_once_and_never_escapes(self):
+        with self._cameras(ZeroDivisionError("bug"), ZeroDivisionError("bug")), \
+             self.assertLogs('petfeedr', 'ERROR') as logs:
+            self.assertTrue(self.camera.snap(self.camera.snap(False)))
+        self.assertEqual(len(logs.records), 1)
+
+    def test_feed_runs_on_time_while_the_camera_is_stuck(self):
+        import threading
+        # A stream that starts and then says nothing: the shot waits on it
+        silent = FakeCamera(frames=0)
+        with self._cameras(silent, FakeCamera(frames=0)), \
+             patch.object(self.camera, 'START_WAIT_S', 3):
+            shot = threading.Thread(target=self.camera.snap, args=(False,), daemon=True)
+            shot.start()
+            try:
+                # The waiting camera holds no feeder lock, so a feed goes straight through
+                self.assertTrue(feeder_core.STATE_LOCK.acquire(blocking=False))
+                feeder_core.STATE_LOCK.release()
+                with patch('feeder_core.notify.send'):
+                    self.assertTrue(feeder_core.feed_pet(portion='small', source='manual'))
+                self.assertTrue(shot.is_alive())
+            finally:
+                silent.end()
+                shot.join(10)
+
+    def test_camera_code_is_apart_from_the_feed_path(self):
+        from pathlib import Path
+        repo = Path(self.camera.__file__).parent
+        source = (repo / 'camera.py').read_text()
+        self.assertNotIn('STATE_LOCK', source)
+        self.assertNotIn('feeder_core', source)
+        for feed_module in ('feeder_core.py', 'servo_controller.py', 'schedule_routes.py', 'hopper.py'):
+            self.assertNotIn('camera', (repo / feed_module).read_text(), feed_module)
+
+
+class TestCameraOffPi(TempCwd):
+    def test_no_camera_off_a_pi(self):
+        import camera
+        import view_state
+        env = {k: v for k, v in os.environ.items() if k != 'PETFEEDR_CAMERA'}
+        with patch.dict(os.environ, env, clear=True), \
+             patch('camera.on_raspberry_pi', return_value=False), \
+             patch('camera._spawn') as run:
+            self.assertIsNone(camera.start())
+            self.assertIsNone(camera.status())
+            self.assertIsNone(view_state.build()['camera'])
+        run.assert_not_called()
+        self.assertFalse(os.path.exists('data'))
+
+
+class TestCameraDashboard(CameraCase):
+    def setUp(self):
+        super().setUp()
+        import web_interface
+        import view_state
+        self.view_state = view_state
+        self.client = web_interface.app.test_client()
+
+    def test_404_before_the_first_frame(self):
+        self.assertEqual(self.client.get('/camera/latest.jpg').status_code, 404)
+
+    def test_serves_the_newest_frame_only(self):
+        now = datetime(2026, 11, 14, 16, 0, 0)
+        self._frame(now - timedelta(minutes=5), b'\xff\xd8 older')
+        self._frame(now, b'\xff\xd8 newest')
+        # Sorts after every frame name, but isn't one
+        with open(os.path.join(self.camera.FRAMES_DIR, 'zzz.jpg'), 'wb') as f:
+            f.write(b'not a frame')
+        resp = self.client.get('/camera/latest.jpg')
+        self.assertEqual((resp.status_code, resp.mimetype), (200, 'image/jpeg'))
+        self.assertEqual(resp.data, b'\xff\xd8 newest')
+        self.assertEqual(resp.headers['Cache-Control'], 'no-cache')
+        resp.close()
+
+    def test_request_cannot_pick_the_file(self):
+        now = datetime(2026, 11, 14, 16, 0, 0)
+        older = self._frame(now - timedelta(minutes=5), b'\xff\xd8 older')
+        self._frame(now, b'\xff\xd8 newest')
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("08:00,small\n")
+        for query in ('?t=' + os.path.basename(older), '?t=../../feeding_schedules.txt',
+                      '?file=feeding_schedules.txt', '?path=/etc/passwd'):
+            resp = self.client.get('/camera/latest.jpg' + query)
+            self.assertEqual(resp.data, b'\xff\xd8 newest', query)
+            resp.close()
+        for path in ('/camera/' + os.path.basename(older), '/camera/zzz.jpg', '/camera/',
+                     '/camera/..%2f..%2ffeeding_schedules.txt', '/camera/latest.jpg/../../feeding_schedules.txt',
+                     '/data/frames/' + os.path.basename(older)):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+
+    def test_route_is_read_only_and_host_checked(self):
+        self._frame(datetime(2026, 11, 14, 16, 0, 0))
+        self.assertEqual(self.client.post('/camera/latest.jpg').status_code, 405)
+        resp = self.client.get('/camera/latest.jpg', headers={'Host': 'evil.example:5000'})
+        self.assertEqual(resp.status_code, 421)
+
+    def test_card_shows_fresh_frame_and_its_time(self):
+        now = datetime(2026, 11, 14, 16, 8, 0)
+        self._frame(datetime(2026, 11, 14, 16, 4, 30))
+        card = self.view_state._camera_card(now)
+        self.assertEqual(card, {'online': True, 'src': '/camera/latest.jpg?t=2026-11-14T160430.jpg',
+                                'label': '4:04 PM', 'alt': 'Camera view of the feeding bowl, 4:04 PM'})
+
+    def test_card_says_offline_when_frames_stop(self):
+        now = datetime(2026, 11, 14, 16, 30, 0)
+        self._frame(datetime(2026, 11, 14, 16, 4, 30))
+        card = self.view_state._camera_card(now)
+        self.assertEqual((card['online'], card['label']), (False, 'Camera offline · last frame 4:04 PM'))
+        self.assertTrue(card['src'])
+        # Yesterday's frame carries its date
+        card = self.view_state._camera_card(now + timedelta(days=1))
+        self.assertEqual(card['label'], 'Camera offline · last frame Nov 14, 4:04 PM')
+
+    def test_a_stray_file_with_an_impossible_time_is_not_a_frame(self):
+        # Shaped like a frame name and sorts last, but no such time exists
+        os.makedirs(self.camera.FRAMES_DIR)
+        with open(os.path.join(self.camera.FRAMES_DIR, '2026-13-45T999999.jpg'), 'wb') as f:
+            f.write(b'junk')
+        self._frame(datetime(2026, 11, 14, 16, 4, 30))
+        card = self.view_state._camera_card(datetime(2026, 11, 14, 16, 8, 0))
+        self.assertEqual(card['label'], '4:04 PM')
+        resp = self.client.get('/camera/latest.jpg')
+        self.assertEqual(resp.data, JPEG)
+        resp.close()
+        self.assertIn('camera', self.view_state.build())
+
+    def test_no_frames_means_no_picture(self):
+        # No blank panel: the Feed card is drawn as it was before the camera
+        self.assertIsNone(self.view_state._camera_card(datetime(2026, 11, 14, 16, 30, 0)))
+        self.assertIsNone(self.view_state.build()['camera'])
+
+
+class PasscodeCase(TempCwd):
+    def setUp(self):
+        super().setUp()
+        import passcode
+        import web_interface
+        self.passcode = passcode
+        self.web = web_interface
+        self.clock = [1000.0]
+        for p in (patch.object(passcode, '_failures', 0),
+                  patch.object(passcode, '_wait_until', 0.0),
+                  patch.object(passcode, '_cache', (None, None)),
+                  patch.object(passcode, '_ROUNDS', 10),          # fast hashing for tests
+                  patch.object(passcode, '_now', side_effect=lambda: self.clock[0]),
+                  patch.object(web_interface, '_last_manual_feed', None)):
+            p.start()
+            self.addCleanup(p.stop)
+        self.json = {'Accept': 'application/json'}
+        self.client = web_interface.app.test_client()
+
+    def _writes(self):
+        """Every route that changes something, with a body that would succeed."""
+        return [('/feed', {'portion': 'small'}),
+                ('/refill', {'remaining_pct': '10'}),
+                ('/add', {'time': '07:30', 'portion': 'small'}),
+                ('/delete', {'time': '07:30'}),
+                ('/toggle_fixed', {'time': '07:30'}),
+                ('/toggle_graze', {'time': '07:30'}),
+                ('/update_portion', {'time': '07:30', 'portion': 'large'})]
+
+
+class TestPorchKey(PasscodeCase):
+    """Porch's feed-only key: one small extra a day, and nothing else."""
+    KEY = 'porch-test-key-9f3a'
+
+    def setUp(self):
+        super().setUp()
+        env = patch.dict(os.environ, {'PORCH_FEED_KEY': self.KEY})
+        env.start()
+        self.addCleanup(env.stop)
+        self.porch = {'Accept': 'application/json', 'X-Porch-Key': self.KEY}
+
+    def _feed(self, data=None, headers=None):
+        with patch('web_interface.feed_pet', return_value=True) as feed:
+            resp = self.client.post('/feed', data={'portion': 'small'} if data is None else data,
+                                    headers=headers or self.porch)
+        return resp, feed
+
+    def _log_extra(self, source):
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open('feeding_log.txt', 'a') as f:
+            f.write(f"{stamp},1 - INFO - Feeding completed in 0.3s (small portion, {source})\n")
+
+    def test_key_feeds_a_small_portion_past_the_lock_as_porch(self):
+        self.passcode.set_passcode('4821')
+        resp, feed = self._feed()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(feed.call_args.kwargs, {'portion': 'small', 'source': 'porch'})
+
+    def test_key_opens_no_other_write(self):
+        self.passcode.set_passcode('4821')
+        with patch('hopper.record_refill') as refill:
+            for path, data in self._writes()[1:] + [('/lock', {}), ('/passcode', {'passcode': '1111'})]:
+                with self.subTest(path=path):
+                    resp = self.client.post(path, data=data, headers=self.porch)
+                    self.assertEqual(resp.status_code, 401)
+                    self.assertTrue(resp.get_json()['locked'])
+        refill.assert_not_called()
+        # /unlock stays open to everyone, and the key is no passcode
+        resp = self.client.post('/unlock', data={'passcode': self.KEY}, headers=self.porch)
+        self.assertEqual(resp.status_code, 401)
+        self.assertNotIn('Set-Cookie', resp.headers)
+
+    def test_only_small_and_never_coerced(self):
+        for data in ({'portion': 'large'}, {'portion': 'medium'}, {'portion': 'huge'}, {}):
+            with self.subTest(data=data):
+                resp, feed = self._feed(data)
+                self.assertEqual(resp.status_code, 400)
+                feed.assert_not_called()
+
+    def test_refused_once_any_extra_was_given_today(self):
+        for source in ('manual', 'porch'):
+            with self.subTest(source=source):
+                with open('feeding_log.txt', 'w'):
+                    pass
+                self._log_extra(source)
+                resp, feed = self._feed()
+                self.assertEqual(resp.status_code, 429)
+                self.assertIn('already given today', resp.get_json()['message'])
+                feed.assert_not_called()
+
+    def test_cooldown_still_applies(self):
+        self.web._last_manual_feed = time.monotonic()
+        resp, feed = self._feed()
+        self.assertEqual(resp.status_code, 429)
+        feed.assert_not_called()
+
+    def test_wrong_missing_or_unset_key_is_just_locked(self):
+        self.passcode.set_passcode('4821')
+        for headers in ({'Accept': 'application/json', 'X-Porch-Key': self.KEY + 'x'},
+                        {'Accept': 'application/json', 'X-Porch-Key': ''},
+                        self.json):
+            with self.subTest(headers=headers):
+                resp, feed = self._feed(headers=headers)
+                self.assertEqual(resp.status_code, 401)
+                feed.assert_not_called()
+        with patch.dict(os.environ, {'PORCH_FEED_KEY': ''}):
+            resp, feed = self._feed()
+        self.assertEqual(resp.status_code, 401)
+        feed.assert_not_called()
+
+    def test_with_no_passcode_a_wrong_key_is_a_plain_manual_feed(self):
+        # Exactly as today: no passcode means the page's own feeds are open
+        resp, feed = self._feed(headers={'Accept': 'application/json', 'X-Porch-Key': 'nope'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(feed.call_args.kwargs['source'], 'manual')
+        # ...but a valid key always gets Porch's rules
+        resp, feed = self._feed({'portion': 'large'})
+        self.assertEqual(resp.status_code, 400)
+
+    def test_host_and_origin_checks_run_first(self):
+        resp, feed = self._feed(headers={**self.porch, 'Origin': 'https://evil.example'})
+        self.assertEqual(resp.status_code, 403)
+        with patch('web_interface.feed_pet') as feed:
+            resp = self.client.post('/feed', data={'portion': 'small'}, headers=self.porch,
+                                    base_url='http://evil.example:5000')
+        self.assertEqual(resp.status_code, 421)
+        feed.assert_not_called()
+
+    def test_key_never_reaches_logs_state_or_responses(self):
+        self.passcode.set_passcode('4821')
+        with self.assertLogs('petfeedr', 'INFO') as logs:
+            bodies = [self._feed()[0].get_data(as_text=True)]
+            self._log_extra('porch')
+            bodies.append(self._feed()[0].get_data(as_text=True))
+            bodies.append(self.client.post('/refill', data={'remaining_pct': '10'},
+                                           headers=self.porch).get_data(as_text=True))
+            bodies.append(self.client.get('/api/state').get_data(as_text=True))
+            bodies.append(self.client.get('/').get_data(as_text=True))
+            log_text = '\n'.join(logs.output)
+        for text in bodies + [log_text]:
+            self.assertNotIn(self.KEY, text)
+
+    def test_porch_feed_counts_as_an_extra_everywhere(self):
+        import manual_limit
+        self._log_extra('porch')
+        today = date.today()
+        feedings, _ = feeding_stats.day_feedings(today.isoformat())
+        self.assertEqual(feedings[0]['type'], 'porch')
+        self.assertEqual(manual_limit.used_today_cups(), 0.25)
+        self.assertTrue(manual_limit.extra_given_today())
+        self.assertEqual(feeding_stats.parse_weekly_stats()[-1]['manual_count'], 1)
+        mark = feeding_stats.rhythm_week([{'ts': f"{today.isoformat()}T12:00:00", 'event': 'dispense',
+                                           'portion': 'small', 'cups': 0.25, 'source': 'porch'}],
+                                         today, [])['days'][-1]['marks'][0]
+        self.assertEqual(mark['kind'], 'manual')
+        # Never a scheduled slot's meal, however close to the slot it lands
+        slot = datetime.now().strftime("%H:%M")
+        self.assertEqual(feeder_core.slot_outcome(slot, today, [], feeder_core.read_all_log_lines()),
+                         (None, None))
+
+
+class TestPasscodeStore(PasscodeCase):
+    def test_nothing_is_set_until_someone_sets_it(self):
+        self.assertFalse(self.passcode.is_set())
+        self.assertEqual(self.passcode.try_unlock('1234'), (None, 0))
+        self.assertFalse(self.passcode.unlocked('anything'))
+
+    def test_only_a_salted_hash_reaches_the_disk(self):
+        token = self.passcode.set_passcode('4821')
+        with open(self.passcode.PATH) as f:
+            raw = f.read()
+        self.assertNotIn('4821', raw)
+        self.assertNotIn(token, raw)            # nor a working unlock token
+        self.assertEqual(os.stat(self.passcode.PATH).st_mode & 0o777, 0o600)
+        self.assertEqual([n for n in os.listdir('data') if n != 'passcode.json'], [])  # no temp left
+        # Salted: the same passcode never hashes the same twice
+        first = json.loads(raw)['hash']
+        self.passcode.set_passcode('4821')
+        with open(self.passcode.PATH) as f:
+            self.assertNotEqual(json.load(f)['hash'], first)
+
+    def test_passcode_must_be_4_to_12_digits(self):
+        for bad in ('', '123', 'abcd', '12 34', '1' * 13, '1234\n', '١٢٣٤', None):
+            with self.subTest(bad=bad), self.assertRaises(self.passcode.PasscodeError):
+                self.passcode.set_passcode(bad)
+        self.assertFalse(self.passcode.is_set())
+
+    def test_right_passcode_unlocks_for_30_days(self):
+        self.passcode.set_passcode('4821')
+        token, wait = self.passcode.try_unlock('4821')
+        self.assertTrue(token)
+        self.assertEqual(wait, 0)
+        self.assertTrue(self.passcode.unlocked(token))
+        day = 86400
+        with patch.object(self.passcode, '_wall', return_value=time.time() + 29 * day):
+            self.assertTrue(self.passcode.unlocked(token))
+        with patch.object(self.passcode, '_wall', return_value=time.time() + 31 * day):
+            self.assertFalse(self.passcode.unlocked(token))
+
+    def test_made_up_tokens_never_unlock(self):
+        self.passcode.set_passcode('4821')
+        for forged in ('', None, 'x', 'A' * 43):
+            self.assertFalse(self.passcode.unlocked(forged))
+
+    def test_locking_ends_that_device_only(self):
+        self.passcode.set_passcode('4821')
+        phone, _ = self.passcode.try_unlock('4821')
+        laptop, _ = self.passcode.try_unlock('4821')
+        self.passcode.lock(phone)
+        self.assertFalse(self.passcode.unlocked(phone))
+        self.assertTrue(self.passcode.unlocked(laptop))
+
+    def test_changing_the_passcode_ends_every_other_unlock(self):
+        self.passcode.set_passcode('4821')
+        old, _ = self.passcode.try_unlock('4821')
+        new = self.passcode.set_passcode('9000')
+        self.assertFalse(self.passcode.unlocked(old))
+        self.assertTrue(self.passcode.unlocked(new))
+        self.assertEqual(self.passcode.try_unlock('4821')[0], None)
+
+    def test_wrong_guesses_meet_growing_waits(self):
+        self.passcode.set_passcode('4821')
+        waits = []
+        for _ in range(12):
+            token, wait = self.passcode.try_unlock('0000')
+            self.assertIsNone(token)
+            waits.append(wait)
+            self.clock[0] += wait   # the guesser waits it out each time
+        self.assertEqual(waits[:4], [0, 0, 0, 0])
+        self.assertEqual(waits[4:], [30, 60, 120, 240, 480, 900, 900, 900])
+
+    def test_the_right_passcode_is_refused_during_a_wait(self):
+        # Otherwise the wait would not slow a guesser down at all
+        self.passcode.set_passcode('4821')
+        for _ in range(5):
+            self.passcode.try_unlock('0000')
+        token, wait = self.passcode.try_unlock('4821')
+        self.assertIsNone(token)
+        self.assertEqual(wait, 30)
+        self.clock[0] += 31
+        self.assertTrue(self.passcode.try_unlock('4821')[0])
+        # A right passcode clears the count
+        self.assertEqual(self.passcode.try_unlock('0000'), (None, 0))
+
+    def test_running_through_every_code_takes_months(self):
+        self.passcode.set_passcode('9999')
+        started = self.clock[0]
+        for guess in range(300):
+            _, wait = self.passcode.try_unlock(f'{guess:04d}')
+            self.clock[0] += wait
+        per_guess = (self.clock[0] - started) / 300
+        self.assertGreater(per_guess * 10000 / 86400, 90)   # days for all 10,000
+
+    def test_a_damaged_file_means_locked_not_open(self):
+        self.passcode.set_passcode('4821')
+        with open(self.passcode.PATH, 'w') as f:
+            f.write('{not json')
+        self.assertTrue(self.passcode.is_set())
+        self.assertEqual(self.passcode.try_unlock('4821')[0], None)
+        self.assertEqual(self.passcode.try_unlock('')[0], None)
+
+    def test_deleting_the_file_is_the_reset(self):
+        token = self.passcode.set_passcode('4821')
+        os.remove(self.passcode.PATH)
+        self.assertFalse(self.passcode.is_set())
+        self.assertFalse(self.passcode.unlocked(token))
+
+    def test_passcode_file_stays_out_of_git_and_deploys(self):
+        from pathlib import Path
+        repo = Path(self.passcode.__file__).parent
+        self.assertTrue(self.passcode.PATH.startswith('data' + os.sep))
+        self.assertIn('data/', (repo / '.gitignore').read_text().splitlines())
+        deploy = (repo / 'deploy.sh').read_text()
+        self.assertIn("--exclude 'data/'", deploy)
+        self.assertIn("--exclude 'data/passcode.json'", deploy)   # the backup copy too
+
+
+class TestPasscodeGate(PasscodeCase):
+    def _unlock(self, code='4821'):
+        return self.client.post('/unlock', data={'passcode': code}, headers=self.json)
+
+    def test_with_no_passcode_everything_works_as_before(self):
+        with patch('web_interface.feed_pet', return_value=True) as feed:
+            resp = self.client.post('/feed', data={'portion': 'small'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+        feed.assert_called_once()
+        self.assertEqual(resp.get_json()['state']['lock'], {'set': False, 'unlocked': False})
+        self.assertEqual(self._unlock().status_code, 400)   # nothing to unlock
+
+    def test_every_write_is_refused_while_locked(self):
+        self.passcode.set_passcode('4821')
+        with patch('web_interface.feed_pet') as feed, patch('hopper.record_refill') as refill:
+            for path, data in self._writes():
+                with self.subTest(path=path):
+                    resp = self.client.post(path, data=data, headers=self.json)
+                    self.assertEqual(resp.status_code, 401)
+                    self.assertTrue(resp.get_json()['locked'])
+                    self.assertEqual(self.client.post(path, data=data).status_code, 401)   # plain form too
+        feed.assert_not_called()
+        refill.assert_not_called()
+        self.assertFalse(os.path.exists('feeding_schedules.txt') and open('feeding_schedules.txt').read().strip())
+
+    def test_the_test_above_covers_every_write_route(self):
+        # A new POST route must be added to _writes(), so it can't ship ungated by accident
+        posts = {str(r) for r in self.web.app.url_map.iter_rules() if 'POST' in r.methods}
+        self.assertEqual(posts - {'/unlock', '/lock', '/passcode'}, {p for p, _ in self._writes()})
+
+    def test_reading_stays_open_while_locked(self):
+        self.passcode.set_passcode('4821')
+        self.assertEqual(self.client.get('/').status_code, 200)
+        state = self.client.get('/api/state').get_json()['data']
+        self.assertEqual(state['lock'], {'set': True, 'unlocked': False})
+        self.assertEqual(self.client.get('/api/day-detail/2026-11-14').status_code, 200)
+        self.assertEqual(self.client.get('/camera/latest.jpg').status_code, 404)   # open; just no frame
+
+    def test_nothing_about_the_passcode_reaches_the_page(self):
+        token = self.passcode.set_passcode('4821')
+        with open(self.passcode.PATH) as f:
+            saved = json.load(f)
+        for body in (self.client.get('/').get_data(as_text=True),
+                     self.client.get('/api/state').get_data(as_text=True)):
+            for secret in ('4821', token, saved['hash'], saved['salt'], *saved['sessions']):
+                self.assertNotIn(secret, body)
+
+    def test_right_passcode_unlocks_this_device(self):
+        self.passcode.set_passcode('4821')
+        resp = self._unlock()
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()['state']['lock'], {'set': True, 'unlocked': True})
+        cookie = resp.headers['Set-Cookie']
+        self.assertIn('HttpOnly', cookie)
+        self.assertIn('SameSite=Strict', cookie)
+        self.assertIn('Max-Age=2592000', cookie)   # 30 days
+        with patch('web_interface.feed_pet', return_value=True) as feed:
+            self.assertEqual(self.client.post('/feed', data={'portion': 'small'}, headers=self.json).status_code, 200)
+        feed.assert_called_once()
+        # Another device, with no cookie, is still locked
+        other = self.web.app.test_client()
+        self.assertEqual(other.post('/feed', data={'portion': 'small'}, headers=self.json).status_code, 401)
+
+    def test_cookie_is_secure_over_https(self):
+        self.passcode.set_passcode('4821')
+        resp = self.client.post('/unlock', data={'passcode': '4821'}, headers=self.json,
+                                base_url='https://petfeedr.example.ts.net')
+        self.assertIn('Secure', resp.headers['Set-Cookie'])
+
+    def test_wrong_passcode_says_only_that(self):
+        self.passcode.set_passcode('4821')
+        with self.assertLogs('petfeedr', 'WARNING') as logs:
+            near = self._unlock('4820')
+            far = self._unlock('0000')
+        self.assertEqual((near.status_code, far.status_code), (401, 401))
+        self.assertEqual(near.get_json(), far.get_json())      # no hint of how close
+        self.assertNotIn('Set-Cookie', near.headers)
+        for record in logs.records:                            # the guess is never logged
+            self.assertNotIn('4820', record.getMessage())
+            self.assertNotIn('0000', record.getMessage())
+
+    def test_too_many_wrong_tries_are_told_to_wait(self):
+        self.passcode.set_passcode('4821')
+        with self.assertLogs('petfeedr', 'WARNING'):
+            for _ in range(4):
+                self._unlock('0000')
+            resp = self._unlock('0000')
+            self.assertEqual(resp.status_code, 429)
+            self.assertIn('wait 30s', resp.get_json()['message'])
+            self.assertEqual(self._unlock('4821').status_code, 429)   # right, but still waiting
+
+    def test_lock_ends_the_unlock_on_the_server(self):
+        self.passcode.set_passcode('4821')
+        token = self._unlock().headers['Set-Cookie'].split(';')[0].split('=', 1)[1]
+        resp = self.client.post('/lock', headers=self.json)
+        self.assertEqual(resp.get_json()['state']['lock'], {'set': True, 'unlocked': False})
+        # A copy of the old cookie is dead too, not just cleared from this browser
+        thief = self.web.app.test_client()
+        thief.set_cookie(self.passcode.COOKIE, token)
+        self.assertEqual(thief.post('/feed', data={'portion': 'small'}, headers=self.json).status_code, 401)
+
+    def test_first_passcode_is_set_from_the_dashboard_and_unlocks_the_setter(self):
+        mismatch = self.client.post('/passcode', data={'passcode': '4821', 'confirm': '4812'}, headers=self.json)
+        self.assertEqual(mismatch.status_code, 400)
+        short = self.client.post('/passcode', data={'passcode': '12', 'confirm': '12'}, headers=self.json)
+        self.assertEqual(short.status_code, 400)
+        self.assertFalse(self.passcode.is_set())
+        with self.assertLogs('petfeedr', 'INFO') as logs:
+            resp = self.client.post('/passcode', data={'passcode': '4821', 'confirm': '4821'}, headers=self.json)
+        self.assertEqual(resp.get_json()['state']['lock'], {'set': True, 'unlocked': True})
+        self.assertNotIn('4821', ' '.join(r.getMessage() for r in logs.records))
+        with patch('web_interface.feed_pet', return_value=True):
+            self.assertEqual(self.client.post('/feed', data={'portion': 'small'}, headers=self.json).status_code, 200)
+
+    def test_changing_the_passcode_needs_an_unlocked_device(self):
+        self.passcode.set_passcode('4821')
+        stranger = self.web.app.test_client()
+        resp = stranger.post('/passcode', data={'passcode': '0000', 'confirm': '0000'}, headers=self.json)
+        self.assertEqual(resp.status_code, 401)
+        self._unlock()
+        other = self.web.app.test_client()
+        other.post('/unlock', data={'passcode': '4821'}, headers=self.json)
+        resp = self.client.post('/passcode', data={'passcode': '7777', 'confirm': '7777'}, headers=self.json)
+        self.assertEqual(resp.status_code, 200)
+        # The changer stays unlocked; every other device is locked out
+        with patch('web_interface.feed_pet', return_value=True):
+            self.assertEqual(self.client.post('/feed', data={'portion': 'small'}, headers=self.json).status_code, 200)
+        self.assertEqual(other.post('/feed', data={'portion': 'small'}, headers=self.json).status_code, 401)
+
+    def test_cross_site_and_unknown_host_are_refused_before_the_passcode_is_looked_at(self):
+        self.passcode.set_passcode('4821')
+        for path in ('/unlock', '/lock', '/passcode'):
+            data = {'passcode': '4821', 'confirm': '4821'}
+            with self.subTest(path=path), self.assertLogs('petfeedr', 'WARNING'):
+                cross = self.client.post(path, data=data, headers={**self.json, 'Origin': 'http://evil.example'})
+                self.assertEqual(cross.status_code, 403)
+                rebound = self.client.post(path, data=data, headers={**self.json, 'Host': 'evil.example:5000'})
+                self.assertEqual(rebound.status_code, 421)
+        # Five refused cross-site tries used none of the free guesses
+        self.assertEqual(self.passcode._failures, 0)
+
+    def test_scheduled_feeds_and_grazes_need_no_unlock(self):
+        self.passcode.set_passcode('4821')
+        from pathlib import Path
+        repo = Path(self.passcode.__file__).parent
+        # The feed path never looks at the passcode: nothing to unlock at 4 AM
+        for module in ('feeder_core.py', 'servo_controller.py', 'PetFeedr.py', 'hopper.py', 'manual_limit.py'):
+            self.assertNotIn('passcode', (repo / module).read_text(), module)
+        with patch('feeder_core.notify.send'):
+            self.assertTrue(feeder_core.feed_pet(portion='small', source='scheduled'))
+
+    def test_deploy_smoke_only_reads(self):
+        from pathlib import Path
+        repo = Path(self.passcode.__file__).parent
+        for script in ('ship.sh', 'ops/check_live.py'):
+            text = (repo / script).read_text()
+            self.assertNotIn('-X POST', text, script)
+            self.assertNotIn('--data', text, script)
+
+
+def _private_terms(root):
+    """Owner-specific terms (one regex per line) from the PRIVATE_TERMS env
+    var (CI secret) or a gitignored .private-terms file. Never in the repo:
+    a list of what to hide would itself say it."""
+    text = os.environ.get('PRIVATE_TERMS', '')
+    path = os.path.join(root, '.private-terms')
+    if not text and os.path.exists(path):
+        with open(path) as f:
+            text = f.read()
+    return [line.strip() for line in text.splitlines() if line.strip() and not line.startswith('#')]
+
+
+SKIP_DIRS = {'.git', '.venv', 'venv', '__pycache__', 'data'}
+TEXT_SUFFIXES = {'.py', '.sh', '.md', '.txt', '.html', '.css', '.js', '.json', '.yml', '.yaml', '.svg', ''}
+
+
+def find_personal_markers(root, private_terms=None):
+    """(path, match) for each email address, home path, tailnet host or
+    private term in the repo's text files. The repo is public; the owner's
+    own setup lives outside it."""
+    import re
+    shapes = [
+        # A real mailbox; user@host deploy targets (pi@petfeedr.local) and
+        # example domains are fine
+        re.compile(r'\b[\w.+-]+@(?!example\.)[\w-]+\.(?:com|net|org|me|io|dev|city|co|us)\b'),
+        re.compile(r'/Users/[a-z]\w*'),
+        re.compile(r'/home/(?!pi\b|<)[a-z]\w*'),
+        re.compile(r'\b[a-z0-9-]+\.(?!example\.|tail0000\.)[a-z0-9-]+\.ts\.net\b'),
+    ]
+    terms = _private_terms(root) if private_terms is None else private_terms
+    shapes += [re.compile(t, re.I) for t in terms]
+    hits = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            if (os.path.splitext(name)[1] not in TEXT_SUFFIXES or name.endswith('.env')
+                    or name == '.private-terms'):
+                continue
+            try:
+                with open(path, encoding='utf-8') as f:
+                    text = f.read()
+            except UnicodeDecodeError:
+                continue
+            rel = os.path.relpath(path, root)
+            for shape in shapes:
+                hits += [(rel, m.group(0)) for m in shape.finditer(text)]
+    return hits
+
+
+class TestNoPersonalSetup(unittest.TestCase):
+    def test_repo_names_no_personal_address_path_or_host(self):
+        root = os.path.dirname(os.path.abspath(__file__))
+        self.assertEqual(find_personal_markers(root), [])
+
+    def test_scan_catches_planted_markers(self):
+        # Breaker: every shape, and a private term, must be seen
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, 'deploy.sh'), 'w') as f:
+                # Fake values, split so this file doesn't match its own scan
+                f.write('# alice.smith@' + 'gmail.com\nrsync /Us' + 'ers/alice/x /ho' + 'me/alice/y\n'
+                        'ssh feeder.tail' + '1234.ts.net\nZebraCorp\n')
+            found = [m for _, m in find_personal_markers(tmp, private_terms=['zebracorp'])]
+            self.assertEqual(len(found), 5, found)
+
+    def test_scan_allows_generic_examples(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, 'README.md'), 'w') as f:
+                f.write('PI_HOST=pi@petfeedr.local /home/pi/PetFeedr /home/<user>/x '
+                        'a@example.com petfeedr.example.ts.net\n')
+            self.assertEqual(find_personal_markers(tmp, private_terms=[]), [])
