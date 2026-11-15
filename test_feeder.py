@@ -2520,6 +2520,31 @@ class TestCamera(CameraCase):
             self.assertNotIn('camera', (repo / feed_module).read_text(), feed_module)
 
 
+class TestMicOff(unittest.TestCase):
+    """The webcam's microphone never becomes a device on the Pi."""
+
+    def setUp(self):
+        from pathlib import Path
+        self.repo = Path(__file__).parent
+
+    def test_the_usb_audio_driver_is_refused_not_just_blacklisted(self):
+        conf = (self.repo / 'ops/modprobe/petfeedr-no-usb-audio.conf').read_text().splitlines()
+        self.assertIn('blacklist snd_usb_audio', conf)
+        # A blacklist alone still lets a by-hand modprobe load it
+        self.assertIn('install snd_usb_audio /bin/false', conf)
+
+    def test_setup_installs_it_and_the_service_cannot_gain_privileges(self):
+        setup = (self.repo / 'setup-pi.sh').read_text()
+        self.assertIn('ops/modprobe/petfeedr-no-usb-audio.conf" /etc/modprobe.d/', setup)
+        unit = setup[setup.index('[Service]'):setup.index('[Install]')]
+        self.assertIn('\nNoNewPrivileges=yes\n', unit)
+
+    def test_the_prod_smoke_checks_both(self):
+        ship = (self.repo / 'ship.sh').read_text()
+        self.assertIn('test ! -e /sys/module/snd_usb_audio', ship)
+        self.assertIn('-p NoNewPrivileges --value', ship)
+
+
 class TestCameraOffPi(TempCwd):
     def test_no_camera_off_a_pi(self):
         import camera
