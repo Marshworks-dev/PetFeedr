@@ -898,6 +898,39 @@ class TestKibbleLook(unittest.TestCase):
                 self.assertNotIn(colour, body, f'{rel} still has {colour}')
 
 
+def _font_size_px(css, selector):
+    """The px font-size the first rule naming exactly this selector sets, or None."""
+    import re
+    for sel, body in re.findall(r'([^{}]+)\{([^{}]*)\}', css):
+        if selector not in [s.strip() for s in sel.split(',')]:
+            continue
+        size = re.search(r'font-size:\s*([0-9.]+)(rem|px)\s*;', body)
+        if size:
+            return float(size.group(1)) * (16 if size.group(2) == 'rem' else 1)
+    return None
+
+
+class TestInputsDontZoom(unittest.TestCase):
+    """iOS Safari zooms the page when a field under 16px takes focus."""
+
+    FIELDS = ('.form-group input', '.form-group select', '.refill-form input',
+              '.refill-form select', '.add-row input[type="time"]', '.lock-dialog input')
+
+    def test_every_field_is_at_least_16px(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static', 'styles.css')) as f:
+            css = f.read()
+        for field in self.FIELDS:
+            size = _font_size_px(css, field)
+            self.assertIsNotNone(size, f'{field} sets no font-size; the browser default is ~13px')
+            self.assertGreaterEqual(size, 16, f'{field} is {size}px')
+
+    def test_size_check_catches_a_small_field(self):
+        # Breaker: the refill form shipped with no size, and the add form at 0.9rem
+        self.assertIsNone(_font_size_px('.refill-form input { padding: 8px; }', '.refill-form input'))
+        self.assertEqual(_font_size_px('.a input, .a select { font-size: 0.9rem; }', '.a select'), 14.4)
+
+
 def _load_check_live():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
