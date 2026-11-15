@@ -4,8 +4,8 @@
   "description": "Smart pet feeding dashboard",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#faf4ea",
-  "theme_color": "#faf4ea",
+  "background_color": "#f4f6f8",
+  "theme_color": "#f4f6f8",
   "icons": [
     {
       "src": "/static/icon.svg",

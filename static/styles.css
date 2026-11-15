@@ -25,43 +25,47 @@
 
 /* ===== CSS Variables ===== */
 :root {
-    /* Kibble: cream and espresso with the MarshWorks yellow and orange.
-       --color-primary is the strong colour (espresso in light, yellow in
-       dark); --color-on-primary is the text that sits on it */
-    --color-bg: #faf4ea;
-    --color-bg-warm: #f3e8d6;
-    --color-surface: #fffaf2;
-    --color-text: #2b1d14;
-    --color-text-muted: #6b5646;
-    --color-primary: #2b1d14;
-    --color-primary-dark: #1a110b;
-    --color-on-primary: #faf4ea;
-    --color-accent: #e8762c;
-    --color-accent-dark: #a8461a;
-    --color-brand: #f2b632;
-    --color-on-brand: #2b1d14;
-    --color-brand-soft: #fbe7b5;
-    /* The pour: falling kibble and the spark it lands with */
+    /* Slate: blue-grey ink, a soft sky blue and a cool off-white. PetFeedr's
+       own palette, calm on purpose: no reds or oranges, so late and missed
+       are the only warm colours on screen (Kibble borrowed MarshWorks'
+       espresso and yellow; Berry's plum and coral read too brash).
+       --color-primary is the strong colour (slate in light, sky in dark);
+       --color-on-primary is the text that sits on it */
+    --color-bg: #f4f6f8;
+    --color-bg-warm: #eaeef2;
+    --color-surface: #ffffff;
+    --color-text: #1e2a36;
+    --color-text-muted: #5a6878;
+    --color-primary: #2f4a63;
+    --color-primary-dark: #233a4f;
+    --color-on-primary: #ffffff;
+    --color-accent: #5b8fbf;
+    --color-accent-dark: #3d6f9e;
+    --color-brand: #7fa9d1;
+    --color-on-brand: #12202c;
+    --color-brand-soft: #dde8f2;
+    /* The pour: falling kibble and the spark it lands with. The food stays
+       kibble-tan in every palette, because it's food */
     --kibble: #b8742f;
     --kibble-shade: #7a4a22;
-    --spark: #e8a21a;
-    --spark-glow: rgba(242, 182, 50, 0.6);
-    --color-emphasis: #8a5a12;
-    --color-ink: #2b1d14;
-    --color-on-ink: #faf4ea;
+    --spark: #8bb4dc;
+    --spark-glow: rgba(139,180,220,0.55);
+    --color-emphasis: #2f4a63;
+    --color-ink: #1e2a36;
+    --color-on-ink: #f4f6f8;
     --color-success: #3f7d4a;
     --color-warning: #c77d06;
     --color-danger: #b3261e;
     --color-on-danger: #ffffff;
 
     /* Portion sizes step down in lightness, so they read apart without colour */
-    --color-portion-small: #f2b632;
-    --color-portion-medium: #e8762c;
-    --color-portion-large: #8f2d1c;
+    --color-portion-small: #b9d0e6;
+    --color-portion-medium: #5b8fbf;
+    --color-portion-large: #2f4a63;
 
-    --shadow-sm: 0 1px 2px rgba(43,29,20,0.06);
-    --shadow-md: 0 4px 12px rgba(43,29,20,0.1);
-    --shadow-lg: 0 8px 30px rgba(43,29,20,0.14);
+    --shadow-sm: 0 1px 2px rgba(30,42,54,0.06);
+    --shadow-md: 0 4px 12px rgba(30,42,54,0.1);
+    --shadow-lg: 0 8px 30px rgba(30,42,54,0.14);
 
     --radius-sm: 10px;
     --radius-md: 14px;
@@ -69,8 +73,8 @@
 
     --card-padding: clamp(0.75rem, 1.5vw, 1.25rem);
 
-    --color-border: #e6d8c2;
-    --color-border-light: #efe4d2;
+    --color-border: #dde3ea;
+    --color-border-light: #e8edf2;
     --color-input-bg: #ffffff;
 
     --color-card-schedule: var(--color-primary);
@@ -90,37 +94,37 @@
 
 /* ===== Dark Mode ===== */
 [data-theme="dark"] {
-    --color-bg: #1a130e;
-    --color-bg-warm: #140f0b;
-    --color-surface: #251b14;
-    --color-text: #f6ecdf;
-    --color-text-muted: #c9b6a2;
-    --color-primary: #f2b632;
-    --color-primary-dark: #d99a14;
-    --color-on-primary: #1a130e;
-    --color-accent: #e8762c;
-    --color-accent-dark: #f0955a;
-    --color-brand: #f2b632;
-    --color-on-brand: #1a130e;
-    --color-brand-soft: #3d2e14;
+    --color-bg: #11161c;
+    --color-bg-warm: #0d1116;
+    --color-surface: #1a2129;
+    --color-text: #e9eef3;
+    --color-text-muted: #a4b1bf;
+    --color-primary: #8bb4dc;
+    --color-primary-dark: #6f9cc8;
+    --color-on-primary: #11161c;
+    --color-accent: #8bb4dc;
+    --color-accent-dark: #a9c8e6;
+    --color-brand: #8bb4dc;
+    --color-on-brand: #11161c;
+    --color-brand-soft: #233142;
     --kibble: #c98a45;
     --kibble-shade: #8a5a2c;
-    --spark: #f6d27a;
-    --spark-glow: rgba(246, 210, 122, 0.55);
-    --color-emphasis: #f2b632;
-    --color-ink: #2e2219;
-    --color-on-ink: #f6ecdf;
+    --spark: #b9d0e6;
+    --spark-glow: rgba(185,208,230,0.5);
+    --color-emphasis: #b9d0e6;
+    --color-ink: #1f2832;
+    --color-on-ink: #e9eef3;
     --color-success: #7cc48a;
-    /* Orange, not yellow: yellow is "fed" in dark, and late must read apart */
-    --color-warning: #f0955a;
+    /* Amber reads warmer in dark than the old orange, apart from the sky "fed" */
+    --color-warning: #f5b14c;
     --color-danger: #ff8a80;
-    --color-on-danger: #1a130e;
-    --color-portion-small: #f6d27a;
-    --color-portion-medium: #e8762c;
-    --color-portion-large: #b8402a;
-    --color-border: #3d2f23;
-    --color-border-light: #30251c;
-    --color-input-bg: #2e2219;
+    --color-on-danger: #11161c;
+    --color-portion-small: #c9dbec;
+    --color-portion-medium: #8bb4dc;
+    --color-portion-large: #5a86b8;
+    --color-border: #2b3643;
+    --color-border-light: #222b35;
+    --color-input-bg: #1f2832;
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
     --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
     --shadow-lg: 0 8px 30px rgba(0,0,0,0.5);
@@ -397,6 +401,7 @@ body {
     gap: 0.5rem;
     position: relative;  /* the feed panel drops from its bottom edge */
     z-index: 20;
+    container-type: inline-size;  /* the wordmark sizes to the header's width (cqi) */
 }
 
 .dashboard-header-actions {
@@ -502,7 +507,10 @@ body {
     align-items: center;
     gap: 0.6rem;
     font-family: var(--font-display);
-    font-size: clamp(1.7rem, 5vw, 2.6rem);
+    /* A 1fr column won't shrink below its content: a wordmark wider than its
+       half pushed the hopper off centre on 360-429px phones. 9cqi - 9px keeps
+       mark + "PetFeedr" inside half the header beside the 56px hopper */
+    font-size: min(clamp(1.7rem, 5vw, 2.6rem), calc(9cqi - 9px));
     font-weight: 600;
     letter-spacing: -0.01em;
     color: var(--color-text);
@@ -602,7 +610,7 @@ body {
     align-items: center;
 }
 
-/* The label is the one yellow line on the espresso card */
+/* The label is the one sky-blue line on the slate card */
 .next-feeding-card .card-label {
     color: var(--color-brand);
 }
@@ -999,7 +1007,7 @@ body {
     padding: 2px 4px;
     border-radius: 999px;
     white-space: nowrap;
-    color: #2b1d14;  /* espresso on the amber badge, both themes */
+    color: #1e2a36;  /* slate ink on the amber badge, both themes */
     background: var(--color-warning);
     pointer-events: none;
 }
@@ -1709,9 +1717,13 @@ body {
     display: contents;
 }
 
-/* "Made by" + the MarshWorks logo: one unit, so a narrow screen moves it to its own line whole */
+/* "Made by" + the MarshWorks logo: always its own centred line under the
+   status, so no divider ever dangles at a wrap (with a last-fed time the
+   status line fills a phone anyway) */
 .footer-credit {
+    flex-basis: 100%;
     display: inline-flex;
+    justify-content: center;
     align-items: center;
     gap: 0.3em;
     white-space: nowrap;
@@ -1993,7 +2005,7 @@ body {
     font-weight: 600;
     padding: 2px 8px;
     border-radius: 999px;
-    background: rgba(243, 156, 18, 0.15);
+    background: color-mix(in srgb, var(--color-warning) 15%, transparent);
     color: var(--color-text);
     white-space: nowrap;
 }
@@ -2019,7 +2031,7 @@ body {
 }
 
 .hopper-svg-empty { fill: var(--color-bg); }
-.hopper-svg-fill { fill: #c8894a; }
+.hopper-svg-fill { fill: #c8894a; }  /* the food in the hopper: kibble-tan on purpose */
 .hopper-svg.is-low .hopper-svg-fill { fill: var(--color-warning); }
 .kibble-dot { fill: rgba(0, 0, 0, 0.16); }
 
@@ -2430,17 +2442,17 @@ body:has(.sheet[open]) {
     bottom: 0.5rem;
     padding: 0.2rem 0.55rem;
     border-radius: 999px;
-    background: rgba(43, 29, 20, 0.88);
-    color: #faf4ea;
+    background: rgba(30, 42, 54, 0.88);
+    color: #f4f6f8;
     font-size: var(--fs-xs);
     font-weight: 600;
 }
 
 .bowl-chip.is-offline { background: #9b1c1c; }
 
-/* Over a picture the card shrinks to a bar across its top. The espresso
-   backing is dense enough to keep cream text above 4.5:1 even over a white
-   frame */
+/* Over a picture the card shrinks to a bar across its top. The slate
+   backing is dense enough to keep the off-white text above 4.5:1 even over
+   a white frame */
 .hero.has-picture .next-feeding-card,
 .hero.has-picture .next-feeding-card.all-fed,
 [data-theme="dark"] .hero.has-picture .next-feeding-card {
@@ -2455,12 +2467,12 @@ body:has(.sheet[open]) {
     column-gap: 0.6rem;
     padding: 0.4rem 0.9rem;
     border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-    background: rgba(43, 29, 20, 0.86);
+    background: rgba(30, 42, 54, 0.86);
     -webkit-backdrop-filter: blur(10px);
     backdrop-filter: blur(10px);
     box-shadow: none;
     border: 0;
-    color: #faf4ea;
+    color: #f4f6f8;
     text-align: left;
     /* Nothing in the bar is tappable; taps reach the picture under it */
     pointer-events: none;
@@ -2525,17 +2537,17 @@ body:has(.sheet[open]) {
 }
 
 /* Where the browser can blur and darken what is behind the bar, the
-   espresso itself can be thin and let the picture show through. Cream text
-   holds 7:1 over a dim floor; over a pure white frame it would drop
+   slate itself can be thin and let the picture show through. The off-white
+   text holds 7:1 over a dim floor; over a pure white frame it would drop
    further, so the text also carries a shadow. Without backdrop-filter the
-   dense espresso above stays */
+   dense slate above stays */
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
     .hero.has-picture .next-feeding-card,
     .hero.has-picture .next-feeding-card.all-fed,
     [data-theme="dark"] .hero.has-picture .next-feeding-card {
         /* Frosted glass: a heavy blur melts the picture into soft colour, the
-           espresso is only a tint, and a thin light edge catches the top and bottom */
-        background: rgba(43, 29, 20, 0.7);
+           slate is only a tint, and a thin light edge catches the top and bottom */
+        background: rgba(30, 42, 54, 0.7);
         -webkit-backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
         backdrop-filter: blur(24px) saturate(1.6) brightness(0.7);
         border-bottom: 1px solid rgba(255, 255, 255, 0.2);
@@ -2658,11 +2670,10 @@ body:has(.bowl-full[open]) { overflow: hidden; }
     margin-top: 0.5rem;
     font-size: var(--fs-sm);
     font-weight: 600;
-    /* Darker than --color-danger, which is 3.8:1 on the card at this size */
-    color: #b3261e;
+    /* --color-danger clears 4.5:1 on the card in both themes (tested) */
+    color: var(--color-danger);
 }
 
-[data-theme="dark"] .lock-error { color: #ff8a80; }
 
 .lock-actions {
     display: flex;
