@@ -328,7 +328,7 @@ def clip_ids():
         names = os.listdir(CLIPS_DIR)
     except FileNotFoundError:
         return []
-    return sorted(n for n in names if _CLIP_ID_RE.match(n))
+    return sorted(n for n in names if _CLIP_ID_RE.fullmatch(n))
 
 
 def clip_id_for(ts):
@@ -337,7 +337,7 @@ def clip_id_for(ts):
 
 
 def _valid_clip_id(clip_id):
-    if not isinstance(clip_id, str) or not _CLIP_ID_RE.match(clip_id):
+    if not isinstance(clip_id, str) or not _CLIP_ID_RE.fullmatch(clip_id):
         return False
     try:
         datetime.strptime(clip_id, CLIP_ID_FORMAT)

@@ -2789,6 +2789,9 @@ class TestFeedClipRoutes(CameraCase):
                      '/data/clips/2026-11-15T153001/000.jpg'):
             self.assertEqual(self.client.get(path).status_code, 404, path)
         self.assertIsNone(self.camera.clip_frame_path('../../feeding_schedules', 0))
+        # The name check stands on its own, not on strptime catching a trailing newline
+        self.assertIsNone(self.camera._CLIP_ID_RE.fullmatch('2026-11-15T153001\n'))
+        self.assertIsNone(self.camera.clip_frame_path('2026-11-15T153001\n', 0))
         self.assertIsNone(self.camera.clip_frame_path('2026-11-15T153001', '0'))
 
     def test_route_is_read_only_and_host_checked(self):
