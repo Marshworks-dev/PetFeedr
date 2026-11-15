@@ -1,0 +1,1192 @@
+/* The hidden attribute must always win — class display rules (.btn,
+   .refill-form, …) otherwise override the UA's [hidden] { display: none } */
+[hidden] {
+    display: none !important;
+}
+
+/* ===== Fonts =====
+   Self-hosted latin subsets of the variable fonts (SIL OFL, licences beside
+   them in static/fonts/). One file per family covers every weight we use. */
+@font-face {
+    font-family: 'Baloo 2';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('fonts/baloo2-latin.woff2') format('woff2');
+}
+
+@font-face {
+    font-family: 'DM Sans';
+    font-style: normal;
+    font-weight: 400 600;
+    font-display: swap;
+    src: url('fonts/dmsans-latin.woff2') format('woff2');
+}
+
+/* ===== CSS Variables ===== */
+:root {
+    --color-bg: #f0f4f4;
+    --color-bg-warm: #e8eded;
+    --color-surface: #ffffff;
+    --color-text: #1a2e30;
+    --color-text-muted: #4a6466;
+    --color-primary: #00838f;
+    --color-primary-dark: #005f66;
+    --color-accent: #f08080;
+    --color-accent-dark: #e06666;
+    --color-success: #27ae60;
+    --color-warning: #f39c12;
+    --color-danger: #e74c3c;
+    
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+    --shadow-lg: 0 8px 30px rgba(0,0,0,0.12);
+    
+    --radius-sm: 8px;
+    --radius-md: 12px;
+    --radius-lg: 20px;
+    
+    --card-padding: clamp(0.75rem, 1.5vw, 1.25rem);
+
+    --color-border: rgba(0,0,0,0.08);
+    --color-border-light: rgba(0,0,0,0.05);
+    --color-input-bg: #ffffff;
+
+    --color-card-schedule: var(--color-primary);
+    --color-card-feed: var(--color-accent);
+    --color-card-activity: #8e44ad;
+    --color-card-stats: var(--color-warning);
+
+    --font-display: 'Baloo 2', cursive;
+    --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* ===== Dark Mode ===== */
+[data-theme="dark"] {
+    --color-bg: #0d2224;
+    --color-bg-warm: #0a1c1e;
+    --color-surface: #142e31;
+    --color-text: #e0e8e8;
+    --color-text-muted: #8aa0a2;
+    --color-primary: #00acc1;
+    --color-primary-dark: #00838f;
+    --color-accent: #f08080;
+    --color-accent-dark: #e06666;
+    --color-success: #2ecc71;
+    --color-warning: #f1c40f;
+    --color-danger: #e74c3c;
+    --color-border: rgba(255,255,255,0.1);
+    --color-border-light: rgba(255,255,255,0.06);
+    --color-input-bg: #1a3538;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.4);
+    --shadow-lg: 0 8px 30px rgba(0,0,0,0.5);
+    --color-card-activity: #bb86fc;
+}
+
+/* ===== Reset & Base ===== */
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+/* Keyboard focus indicator */
+:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Skip link for screen readers */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+}
+
+html {
+    font-size: 16px;
+    /* Solid page color on the root: it fills the iOS status-bar strip and
+       overscroll areas, which the body's gradient doesn't reach */
+    background-color: var(--color-bg);
+}
+
+body {
+    font-family: var(--font-body);
+    background: linear-gradient(135deg, var(--color-bg) 0%, var(--color-bg-warm) 100%);
+    background-attachment: fixed;
+    color: var(--color-text);
+    /* The document scrolls, not an inner box — keeps iOS tap-status-bar-to-top,
+       a collapsing address bar, and native scroll restoration */
+    min-height: 100vh;
+    min-height: 100dvh;
+    line-height: 1.5;
+}
+
+/* ===== Forms ===== */
+.form-group {
+    margin-bottom: 0.6rem;
+}
+
+.form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    margin-bottom: 0.35rem;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    font-family: inherit;
+    color: var(--color-text);
+    border: 2px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-input-bg);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px rgba(0,131,143,0.15);
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+    margin-bottom: 1rem;
+}
+
+.checkbox-label input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--color-primary);
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    margin-bottom: 0.5rem;
+}
+
+.toggle-switch input {
+    display: none;
+}
+
+.toggle-slider {
+    width: 48px;
+    height: 26px;
+    background: #ccc;
+    border-radius: 13px;
+    position: relative;
+    transition: background 0.3s ease;
+}
+
+.toggle-slider::after {
+    content: '';
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 20px;
+    height: 20px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s ease;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--color-primary);
+}
+
+.toggle-switch input:checked + .toggle-slider::after {
+    transform: translateX(22px);
+}
+
+.toggle-label-text {
+    font-weight: 500;
+}
+
+.setting-description {
+    font-size: 0.75rem;
+    color: var(--color-text-muted);
+    margin-bottom: 0.6rem;
+    line-height: 1.3;
+}
+
+/* ===== Buttons ===== */
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.6rem 1.25rem;
+    font-size: 1rem;
+    font-weight: 600;
+    font-family: inherit;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.2s ease;
+}
+
+.btn:hover {
+    transform: translateY(-1px);
+}
+
+.btn:active {
+    transform: translateY(0);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+    color: white;
+    width: 100%;
+}
+
+.btn-primary:hover {
+    box-shadow: 0 4px 12px rgba(0,131,143,0.3);
+}
+
+.btn-secondary {
+    background: var(--color-surface);
+    color: var(--color-primary);
+    border: 2px solid var(--color-primary);
+    width: 100%;
+}
+
+.btn-secondary:hover {
+    background: var(--color-primary);
+    color: white;
+}
+
+.btn-feed {
+    background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-dark) 100%);
+    color: white;
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+    border-radius: var(--radius-md);
+}
+
+.btn-feed:hover {
+    box-shadow: 0 6px 20px rgba(240,128,128,0.4);
+}
+
+.feed-icon {
+    font-size: 1.3rem;
+}
+
+.btn-icon {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: background 0.2s ease;
+}
+
+.btn-icon:hover {
+    background: var(--color-border-light);
+}
+
+.btn-delete {
+    color: var(--color-danger);
+    border-color: var(--color-danger);
+}
+
+.btn-delete:hover {
+    background: var(--color-danger);
+    color: white;
+}
+
+/* ===== Dashboard ===== */
+.dashboard {
+    max-width: 1060px;
+    margin: 0 auto;
+    padding: clamp(0.5rem, 1vw, 0.75rem) clamp(0.75rem, 3vw, 3rem);
+    padding-bottom: 0;
+    /* Clear the status bar / Dynamic Island (viewport-fit=cover) and, in
+       landscape, the notch side; env() is 0 everywhere else */
+    padding-top: calc(clamp(0.5rem, 1vw, 0.75rem) + env(safe-area-inset-top));
+    padding-left: max(clamp(0.75rem, 3vw, 3rem), env(safe-area-inset-left));
+    padding-right: max(clamp(0.75rem, 3vw, 3rem), env(safe-area-inset-right));
+    min-height: 100vh;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    /* clip, not hidden: hidden would make this a scroll container and
+       break the sticky footer; clip just stops stray tooltips widening the page */
+    overflow-x: clip;
+}
+
+.dashboard-back-link {
+    display: flex;
+    align-items: center;
+    color: var(--color-muted, #888);
+    transition: color 0.15s;
+}
+.dashboard-back-link:hover { color: var(--color-accent); }
+
+.dashboard-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0 clamp(0.25rem, 1vw, 0.5rem);
+    gap: 0.75rem;
+}
+
+.dashboard-header h1 {
+    font-family: var(--font-display);
+    font-size: clamp(2.2rem, 6vw, 3.5rem);
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.pet {
+    color: var(--color-accent);
+}
+
+.feedr {
+    color: var(--color-primary);
+}
+
+.theme-toggle,
+.lock-toggle {
+    background: var(--color-surface);
+    border: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    color: var(--color-text-muted);
+    transition: box-shadow 0.2s ease, color 0.2s ease;
+}
+
+.theme-toggle:hover,
+.lock-toggle:hover {
+    box-shadow: var(--shadow-md);
+    color: var(--color-primary);
+}
+
+.theme-icon { display: none; }
+.theme-toggle[data-mode="auto"] .icon-auto,
+.theme-toggle[data-mode="light"] .icon-light,
+.theme-toggle[data-mode="dark"] .icon-dark {
+    display: block;
+    animation: themeIconIn 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.3);
+}
+
+@keyframes themeIconIn {
+    from { opacity: 0; transform: rotate(-90deg) scale(0.6); }
+    to   { opacity: 1; transform: none; }
+}
+
+.dashboard-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.dashboard-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(0.4rem, 1vw, 0.75rem);
+    align-content: start;
+}
+
+@media (max-width: 600px) {
+    .dashboard-content {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ===== Cards ===== */
+.card {
+    background: var(--color-surface);
+    border-radius: var(--radius-lg);
+    padding: var(--card-padding);
+    box-shadow: var(--shadow-sm);
+}
+
+.card-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted);
+    margin-bottom: 0.5rem;
+}
+
+/* Next Feeding Card */
+.next-feeding-card {
+    grid-column: 1 / -1;
+    background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+    color: white;
+    text-align: center;
+    padding: clamp(0.75rem, 2vw, 1.5rem);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Solid, not faded: at 0.8 opacity this small label dropped below 4.5:1 */
+.next-feeding-card .card-label {
+    color: white;
+}
+
+/* Dark theme's brighter teal (#00acc1) gave white text 2.7:1; these give 5.4–8.7:1 */
+[data-theme="dark"] .next-feeding-card:not(.all-fed) {
+    background: linear-gradient(135deg, #00767f 0%, #00545c 100%);
+}
+
+.next-feeding-time {
+    font-family: var(--font-display);
+    font-size: clamp(2rem, 6vw, 3rem);
+    font-weight: 700;
+    line-height: 1.1;
+    margin-bottom: 0.5rem;
+}
+
+.next-feeding-portion {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.portion-badge {
+    display: inline-block;
+    padding: 0.3rem 0.8rem;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: capitalize;
+}
+
+.portion-small {
+    background: rgba(39,174,96,0.15);
+    color: #27ae60;
+}
+
+.next-feeding-card .portion-small {
+    background: rgba(255,255,255,0.2);
+    color: white;
+}
+
+.portion-medium {
+    background: rgba(243,156,18,0.15);
+    color: #f39c12;
+}
+
+.next-feeding-card .portion-medium {
+    background: rgba(255,255,255,0.2);
+    color: white;
+}
+
+.portion-large {
+    background: rgba(231,76,60,0.15);
+    color: #e74c3c;
+}
+
+.next-feeding-card .portion-large {
+    background: rgba(255,255,255,0.2);
+    color: white;
+}
+
+.randomized-note {
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+/* All-Fed State — light keeps the sunny gradient but takes dark text (white
+   on it was 1.8:1); dark deepens the gradient so white text clears 4.9:1 */
+.next-feeding-card.all-fed {
+    background: linear-gradient(135deg, #f8b400 0%, #f08080 100%);
+    color: #3b2200;
+}
+
+.next-feeding-card.all-fed .card-label {
+    color: #3b2200;
+}
+
+[data-theme="dark"] .next-feeding-card.all-fed {
+    background: linear-gradient(135deg, #a85d00 0%, #9c3f53 100%);
+    color: white;
+}
+
+[data-theme="dark"] .next-feeding-card.all-fed .card-label {
+    color: white;
+}
+
+.all-fed-content {
+    text-align: center;
+}
+
+.all-fed-illustration {
+    margin: 0.5rem auto;
+    display: block;
+}
+
+/* ===== Sleeping cat ===== */
+/* The z's drift above the drawing's box, so let them out of it */
+.all-fed-illustration {
+    overflow: visible;
+}
+
+/* Breathing: a slow rise, then a soft squish wider on the exhale. Pivots
+   on the bottom of the head so it settles rather than floats */
+.cat-breathe {
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+    animation: catBreathe 3.6s ease-in-out infinite;
+}
+
+@keyframes catBreathe {
+    0%, 100% { transform: scale(1, 1); }
+    40%      { transform: scale(0.98, 1.06); }    /* inhale: taller, a touch narrower */
+    70%      { transform: scale(1.045, 0.955); }  /* exhale: the squish */
+}
+
+/* z's float up and to the right, growing and fading, one leaving per
+   exhale (3 z's x 1.2s stagger = the 3.6s breath) */
+.sleep-z {
+    transform-box: fill-box;
+    transform-origin: center;
+    opacity: 0;
+    font-weight: 700;
+    animation: sleepZ 3.6s ease-out infinite;
+}
+
+.sleep-z.z2 { animation-delay: 1.2s; }
+.sleep-z.z3 { animation-delay: 2.4s; }
+
+@keyframes sleepZ {
+    0%   { opacity: 0;    transform: translate(0, 0) scale(0.5) rotate(-10deg); }
+    15%  { opacity: 0.9; }
+    50%  {                transform: translate(14px, -24px) scale(1) rotate(8deg); }
+    100% { opacity: 0;    transform: translate(30px, -50px) scale(1.5) rotate(-6deg); }
+}
+
+/* Reduced motion: still z's in a little rising stack, cat at rest */
+@media (prefers-reduced-motion: reduce) {
+    .cat-breathe { animation: none; }
+    .sleep-z { animation: none; }
+    .sleep-z.z1 { opacity: 0.75; transform: translate(0, 0) scale(0.7); }
+    .sleep-z.z2 { opacity: 0.55; transform: translate(12px, -14px) scale(0.9); }
+    .sleep-z.z3 { opacity: 0.4; transform: translate(24px, -30px) scale(1.1); }
+}
+
+.all-fed-text {
+    font-family: var(--font-display);
+    font-size: clamp(1.2rem, 3vw, 1.5rem);
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.all-fed-subtext {
+    font-size: 0.9rem;
+}
+
+/* Schedule Card */
+.schedule-card {
+    grid-column: 1 / -1;
+}
+
+/* Timeline */
+.timeline {
+    position: relative;
+    padding: 1.5rem 0 0.5rem;
+}
+
+.timeline-bar {
+    position: relative;
+    height: 6px;
+    background: var(--color-border);
+    border-radius: 3px;
+    margin: 0 1rem;
+}
+
+.timeline-dot {
+    position: absolute;
+    left: var(--dot-pos);
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 3px solid var(--color-primary);
+    background: var(--color-surface);
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    z-index: 2;
+}
+
+.timeline-dot.is-past {
+    background: var(--color-primary);
+}
+
+.timeline-dot.is-next {
+    box-shadow: 0 0 0 4px rgba(240,128,128,0.2);
+    animation: dotPulse 2s ease infinite;
+}
+
+@keyframes dotPulse {
+    0%, 100% { box-shadow: 0 0 0 4px rgba(240,128,128,0.2); }
+    50%      { box-shadow: 0 0 0 8px rgba(240,128,128,0.1); }
+}
+
+.timeline-dot.portion-small  { border-color: var(--color-success); --dot-fill: var(--color-success); }
+.timeline-dot.portion-small.is-past  { background: var(--color-success); }
+.timeline-dot.portion-medium { border-color: var(--color-warning); --dot-fill: var(--color-warning); }
+.timeline-dot.portion-medium.is-past { background: var(--color-warning); }
+.timeline-dot.portion-large  { border-color: var(--color-danger); --dot-fill: var(--color-danger); }
+.timeline-dot.portion-large.is-past  { background: var(--color-danger); }
+
+.timeline-dot:hover {
+    transform: translate(-50%, -50%) scale(1.3);
+}
+
+/* Outcome states — what actually happened, not just "in the past".
+   .is-past in the selector outranks the portion-color fill rules above. */
+.timeline-dot.is-past.status-missed,
+.timeline-dot.status-missed {
+    background: var(--color-surface);
+    border-color: var(--color-danger);
+    border-style: dashed;
+}
+
+.timeline-dot.is-past.status-failed,
+.timeline-dot.status-failed {
+    background: var(--color-danger);
+    border-color: var(--color-danger);
+}
+
+.timeline-dot.status-due {
+    animation: dotPulse 1s ease infinite;
+}
+
+/* Grazing: half filled in the portion colour, the meal still coming out.
+   The fill rules above set background on .is-past, so this needs the same weight */
+.timeline-dot.is-past.status-grazing,
+.timeline-dot.status-grazing {
+    background: linear-gradient(to top, var(--dot-fill, var(--color-primary)) 50%, var(--color-surface) 50%);
+}
+
+.dot-badge {
+    position: absolute;
+    bottom: calc(100% + 3px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 999px;
+    white-space: nowrap;
+    color: #3d2a00;  /* white on amber fails contrast in both themes */
+    background: var(--color-warning);
+    pointer-events: none;
+}
+
+.status-missed .dot-badge,
+.status-failed .dot-badge {
+    color: white;
+    background: var(--color-danger);
+    min-width: 1.2em;
+    text-align: center;
+}
+
+.tooltip-status {
+    color: var(--color-text-muted);
+    font-size: 0.7rem;
+}
+
+.timeline-tooltip {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--color-surface);
+    color: var(--color-text);
+    padding: 0.4rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    white-space: nowrap;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    z-index: 10;
+    text-align: center;
+}
+
+.timeline-dot:hover .timeline-tooltip,
+.timeline-dot.active .timeline-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+.timeline-now {
+    position: absolute;
+    top: -8px;
+    bottom: -8px;
+    width: 2px;
+    background: var(--color-accent);
+    z-index: 1;
+    border-radius: 1px;
+}
+
+.timeline-now::after {
+    content: 'now';
+    position: absolute;
+    bottom: calc(100% + 4px);
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    color: var(--color-accent);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.timeline-hours {
+    position: relative;
+    margin: 0.75rem 1rem 0;
+    height: 1.25rem;
+}
+
+.timeline-hour-tick {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 8px;
+    background: var(--color-text-muted);
+    opacity: 0.35;
+    transform: translateX(-50%);
+}
+
+.timeline-hour-tick.has-label {
+    height: 10px;
+    opacity: 0.5;
+}
+
+.timeline-hour-label {
+    position: absolute;
+    top: 9px;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    color: var(--color-text-muted);
+}
+
+.daily-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 2px solid var(--color-border-light);
+}
+
+.daily-label {
+    font-size: 0.85rem;
+    color: var(--color-text-muted);
+    font-weight: 500;
+}
+
+.daily-value {
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--color-primary);
+}
+
+/* Feed Card */
+.feed-card {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: clamp(0.75rem, 2vw, 1.25rem);
+}
+
+.feed-form {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+/* Circular Feed Button */
+.feed-circle-btn {
+    width: clamp(80px, 12vw, 100px);
+    height: clamp(80px, 12vw, 100px);
+    border-radius: 50%;
+    border: none;
+    background: var(--color-primary);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(0,131,143,0.35);
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.feed-circle-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 8px 28px rgba(0,131,143,0.5);
+}
+
+/* Same 2.7:1 problem as the Next card in dark mode; #00767f gives "FEED" 5.4:1 */
+[data-theme="dark"] .feed-circle-btn:not(:disabled) {
+    background: #00767f;
+}
+
+.feed-circle-btn:active {
+    transform: scale(0.95);
+    box-shadow: 0 2px 10px rgba(0,131,143,0.3);
+}
+
+.feed-circle-label {
+    font-family: var(--font-display);
+    font-size: 1.4rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+@keyframes feedRipple {
+    0%   { transform: scale(0); opacity: 0.5; }
+    100% { transform: scale(3); opacity: 0; }
+}
+
+.feed-circle-btn .ripple {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.4);
+    top: 50%;
+    left: 50%;
+    margin: -25px 0 0 -25px;
+    animation: feedRipple 0.6s ease-out forwards;
+    pointer-events: none;
+}
+
+@keyframes feedPulse {
+    0%, 100% { box-shadow: 0 6px 20px rgba(0,131,143,0.35); }
+    50%      { box-shadow: 0 0 30px rgba(39,174,96,0.6); }
+}
+
+/* Segmented Portion Control */
+.portion-segmented {
+    display: flex;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    border: 2px solid var(--color-border);
+}
+
+.portion-segment input {
+    display: none;
+}
+
+.portion-segment-label {
+    display: block;
+    padding: 0.5rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, transform 0.15s ease;
+    background: var(--color-surface);
+    color: var(--color-text-muted);
+}
+
+.portion-segment-label:hover {
+    background: var(--color-border-light);
+    transform: scale(1.05);
+}
+
+.portion-segment input:checked + .portion-segment-label:hover {
+    transform: scale(1.05);
+}
+
+.portion-segment input:checked + .portion-segment-label.portion-small {
+    background: var(--color-success);
+    color: white;
+}
+
+.portion-segment input:checked + .portion-segment-label.portion-medium {
+    background: var(--color-warning);
+    color: white;
+}
+
+.portion-segment input:checked + .portion-segment-label.portion-large {
+    background: var(--color-danger);
+    color: white;
+}
+
+.portion-description {
+    font-size: 0.8rem;
+    color: var(--color-text-muted);
+    min-height: 1.2em;
+}
+
+/* ===== Stats Card ===== */
+.stats-card {
+    display: flex;
+    flex-direction: column;
+    overflow: visible;
+}
+
+/* Weekly rhythm: one row per day on a 24h axis. Columns = on schedule;
+   anything off (manual, late, missed) breaks the pattern visibly. */
+.rhythm {
+    --rhythm-day-col: 2.6rem;
+    --rhythm-cups-col: 1.8rem;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.rhythm-axis {
+    position: relative;
+    height: 0.9rem;
+    margin: 0 var(--rhythm-cups-col) 0.1rem var(--rhythm-day-col);
+    font-size: 0.6rem;
+    color: var(--color-text-muted);
+}
+
+.rhythm-axis span {
+    position: absolute;
+    transform: translateX(-50%);
+}
+
+.rhythm-row {
+    display: grid;
+    grid-template-columns: var(--rhythm-day-col) 1fr var(--rhythm-cups-col);
+    align-items: center;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+}
+
+.rhythm-row:hover,
+.rhythm-row.selected { background: var(--color-bg); }
+
+.rhythm-row.is-today { background: color-mix(in srgb, var(--color-primary) 8%, transparent); }
+
+.rhythm-day {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--color-text-muted);
+    padding-left: 0.35rem;
+}
+
+.rhythm-row.is-today .rhythm-day,
+.rhythm-row.selected .rhythm-day {
+    color: var(--color-primary);
+    font-weight: 700;
+}
+
+.rhythm-track {
+    position: relative;
+    height: clamp(18px, 2.6vh, 24px);
+    background: linear-gradient(var(--color-border), var(--color-border)) center / 100% 1px no-repeat;
+}
+
+.rhythm-cups {
+    font-size: 0.65rem;
+    color: var(--color-text-muted);
+    text-align: right;
+    padding-right: 0.35rem;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Scheduled slot: a thin band for fixed times, the ±30 min window when randomized */
+.rhythm-guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc((var(--pct) - var(--half)) * 1% - 3px);
+    width: calc(var(--half) * 2% + 6px);
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.rhythm-now {
+    position: absolute;
+    top: 2px;
+    bottom: 2px;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 1px;
+    background: var(--color-accent);
+    display: none;
+}
+
+.rhythm-mark {
+    position: absolute;
+    top: 50%;
+    left: calc(var(--pct) * 1%);
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+}
+
+.rhythm-mark.size-medium { width: 12px; height: 12px; }
+.rhythm-mark.size-large  { width: 15px; height: 15px; }
+
+.mark-fed      { background: var(--color-primary); }
+.mark-manual   { background: var(--color-surface); border: 2px solid var(--color-accent-dark); }
+.mark-late     { background: var(--color-warning); }
+.mark-upcoming {
+    width: 10px;
+    height: 10px;
+    border: 2px dashed var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+}
+
+.mark-missed,
+.mark-failed {
+    display: grid;
+    place-items: center;
+    color: var(--color-danger);
+    z-index: 1;  /* a ✕ must never hide under a dot in the same slot */
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.mark-missed::before,
+.mark-failed::before { content: '✕'; }
+
+.rhythm-late-tail {
+    position: absolute;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    left: calc(var(--from) * 1%);
+    width: calc((var(--pct) - var(--from)) * 1%);
+    background: var(--color-warning);
+}
+
+.rhythm-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.4rem;
+    padding-left: var(--rhythm-day-col);
+    font-size: 0.62rem;
+    color: var(--color-text-muted);
+}
+
+.rhythm-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.rhythm-legend .rhythm-mark {
+    position: static;
+    transform: none;
+    flex-shrink: 0;
+}
+
+.rhythm-guide-key {
+    width: 6px;
+    height: 12px;
+    background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+}
+
+.day-detail-panel {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background: var(--color-bg);
+    border-radius: var(--radius-sm);
+    font-size: 0.8rem;
+    flex-shrink: 0;
+    animation: slideDown 0.15s ease;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.day-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+    font-size: 0.85rem;
+}
+
+.day-detail-total {
+    color: var(--color-text-muted);
+    font-weight: 400;
+}
+
+.day-detail-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.day-detail-item {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    padding: 0.2rem 0;
+}
+
+.day-detail-time {
+    color: var(--color-text-muted);
+    min-width: 5em;
+}
+
+.day-detail-portion {
+    font-size: 0.7rem;
+    padding: 0.1rem 0.4rem;
+    border-radius: 3px;
+    text-transform: capitalize;
+}
+
+.day-detail-portion {
+    position: relative;
+    cursor: default;
+}
+
+.detail-cups {
+    display: none;
+    margin-left: 0.3rem;
+    font-size: 0.65rem;
+    opacity: 0.7;
+}
+
+.day-detail-item:hover .detail-cups {
+    display: inline;
+}
