@@ -1,44 +1,66 @@
-# One mark: the P is the hopper
+# Graze trail, and the hopper becomes the feed button
 
-Status: approved
+Status: shipped
 
-Intent: Merge the P logo and the hopper into one mark that works as the
-brand, with a full logo and a short mark the way MarshWorks has them. The
-P is drawn as the hopper itself: kibble fills the letter around its
-counter, the stem is the chute, the spout sits under the stem (option A on
-the mark board). The full logo is that P with "etFeedr" in Fredoka, kerned
-in so the e tucks under the curve of the bowl (spacing b). The short mark
-is the P alone. In the app, the P keeps the hopper's job: it's the feed
-button and it shows the fill level.
+Intent: A graze reads as what it is, a meal spread out over time, on Today's
+bar and the 7-day chart. The hopper moves to the top of the screen and
+becomes the way you feed by hand. When food comes out while the app is open,
+you see it fall from the hopper and land on Today's bar, then the right node
+fills. Two commits: the trail first, then the hopper.
 
 ## Done when
-- [check] The header is the full logo on the left, with lock and theme on
-      the right. The logo's P is the live hopper button with the % badge
-      under its spout. Only the P is the button, with a tap area at least
-      44 px wide. When the hopper is low, the badge's text turns the
-      warning colour too. The name stays one size at every width. "PetFeedr" stays the
-      page's heading for screen readers. The old P disc is gone. It matches
-      layout 1 and spacing b on the boards.
-- [test] The P is still the hopper button. It shows the level, turns the
-      warning colour when low, and reads half full while capacity is still
-      being learned. Tapping it opens the feed panel. Its label still says
-      the level and what a tap does.
-- [check] A pour still falls from the P's spout, and the P shakes when the
-      food drops. With reduced motion on, nothing moves.
-- [test] The short mark is the favicon and the manifest icon, plus a new
-      180 px PNG `apple-touch-icon`, so iOS shows it on the home screen. The
-      icon is static at about 80% full. The full logo exists as its own SVG
-      file (light and dark), for the README and the brand kit later. The
-      page links all three icons.
-- [check] At 320, 360 and 390 px, in light and dark, the header fits on one
-      row and the theme button stays fully on screen. The short mark stays
-      legible at 16 px.
-- [test] All existing tests pass, plus one unhappy-path test: the page still
-      renders the logo when the hopper has no data.
+
+Trail (commit 1)
+- [test] Today's state gives each graze slot its pulse count (small 2,
+      medium 4, large 6), how many have landed, and whether it was cut
+      short. These come from the pulse journal.
+- [check] On Today's bar, a graze is its head node followed by one crumb
+      for each pulse after the first. A crumb is filled once its pulse has
+      landed and hollow while it's still to come. A graze cut short ends
+      in a ✕. Crumbs are spaced evenly, not to scale, so the trail's
+      length shows the pulse count. This matches the trail mock
+      (2Tg2UFai…).
+- [test] The 7-day chart puts a graze at its slot's start, not at the time
+      it finished, and draws a smaller trail of crumbs. The legend gains a
+      "grazed" entry.
+- [test] A large graze in the day's last slot doesn't run off the end of
+      Today's bar. The bar's end is padded to fit it.
+- [test] Every node and crumb has a text equivalent ("5:30 PM graze, 2 of
+      4 pulses so far").
+
+Hopper (commit 2)
+- [check] The hopper sits top center in the header, on every view. Its
+      badge shows the level. Tapping it opens a panel with the controls
+      that today live in the Feed and Hopper cards: S/M/L, hold to feed,
+      extras left, pounds left, the refill-by date and Refilled. The panel
+      closes on an outside tap or Escape. It matches the pour mock
+      (UpTVab…).
+- [test] The Feed card and the Hopper card are gone. Their controls keep
+      their behavior: hold to feed, the daily cap, the cooldown, the
+      passcode gate and the refill form all work as now, and their
+      existing tests still pass.
+- [test] A manual or Porch feed shows on Today's bar as an extra node with
+      an orange ring, at the time it happened.
+- [check] While the app is open, a new dispense pours: food falls from the
+      hopper over the camera and sprinkles along Today's bar, the bar
+      charges up, and the charge converges into the node, which fills with
+      a burst. This covers a manual feed, a scheduled meal and each graze
+      pulse; a pulse is a lighter sprinkle into its crumb.
+- [test] The pour is triggered only by a change in state. A feed that
+      happened while the app was closed shows as already filled, with no
+      pour. A refresh or a second tab never pours the same feed twice.
+- [check] With reduced motion on, nothing falls or moves: the node simply
+      fills.
+- [check] Light and dark at phone width. The hopper button is at least
+      44 px, its label says the level and what tapping it does, and the
+      panel's focus moves in and back out correctly.
+- [test] At least one unhappy-path test for each new data field. All
+      tests pass.
 
 ## Out of scope
-- Any change to the feed panel, the hopper math, the pour path or the feed path
-- The wordmark's typeface, or the app's colours beyond the mark itself
-- Putting the full logo into the README, marshworks.dev or the brand kit
-  (follow-up, once it has lived on the phone); logo.png stays as is
-- Animating the home-screen icon
+- Live push (SSE or websockets). A pour shows up on the next state refresh,
+  as the page updates now.
+- Any change to the feed path, the manual cap or cooldown, the refill math,
+  or the camera
+- Pours on the 7-day chart
+- Sound or haptics
