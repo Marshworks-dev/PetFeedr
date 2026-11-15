@@ -127,7 +127,9 @@ function renderExtras(bar, extras) {
             dot = document.createElement('div');
             dot.className = 'timeline-dot extra is-past';
             dot.dataset.key = extra.key;
-            dot.setAttribute('role', 'img');
+            // A button like the slots: tapping it shows its clip
+            dot.setAttribute('role', 'button');
+            dot.tabIndex = 0;
             bar.appendChild(dot);
             animate(dot, [{ opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1 }], { duration: 300 });
         }

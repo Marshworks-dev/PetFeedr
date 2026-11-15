@@ -1,9 +1,12 @@
-"""Bowl camera: saves a frame every few minutes. Nothing interprets them yet.
+"""Bowl camera: a frame every few minutes, and a short clip of every feed.
 
 A USB webcam over the bowl is a sensor the rest of the feeder lacks —
-"Feeding completed" only proves the motor turned. This step just collects:
-frames land in data/frames/, named by local time, so a later step can pair
-them with feeds from the event journal by timestamp.
+"Feeding completed" only proves the motor turned. Frames land in
+data/frames/, named by local time. The last minute of the stream is also
+kept in memory, and when the event journal records a dispense or a graze
+pulse, the frames from just before it to just after are saved as a clip in
+data/clips/, named by the event's time, so the dashboard can show food
+landing.
 
 The webcam is started once and left streaming; each saved frame is the
 newest one off that stream. Measured on the Pi: this webcam is steady while
@@ -16,15 +19,19 @@ lock and no feed code calls in, so a flaky webcam can never delay or break
 a meal.
 """
 
+import collections
+import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
 from datetime import datetime, timedelta
 
 from DRV8825 import on_raspberry_pi
+from events import EVENTS_FILE
 
 log = logging.getLogger('petfeedr')
 
@@ -50,6 +57,24 @@ RETRY_AFTER_S = 8
 # Two missed shots and the dashboard calls the camera offline
 STALE_AFTER_S = 2 * INTERVAL_S + 60
 
+CLIPS_DIR = os.path.join('data', 'clips')
+# A clip runs from this long before a dispense starts to this long after it ends
+CLIP_BEFORE_S = 10
+CLIP_AFTER_S = 30
+# 2 a second from the 5 a second stream: food landing reads, at about 5 MB a clip
+CLIP_STEP_S = 0.5
+# Memory holds enough stream for a clip's whole window plus the watcher's lag:
+# about 8 MB of frames
+BUFFER_S = 60
+# How often the watcher reads the journal for new events
+WATCH_EVERY_S = 1
+# Only these journal events get a clip. A graze's closing dispense is left
+# out: each of its pulses already has one, and it lands in the same second
+# as the last pulse
+_CLIP_EVENTS = ('dispense', 'graze_pulse')
+CLIP_ID_FORMAT = '%Y-%m-%dT%H%M%S'
+_CLIP_ID_RE = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{6}$')
+
 # Sortable, so the newest frame is the last name and pruning is a comparison
 NAME_FORMAT = '%Y-%m-%dT%H%M%S.jpg'
 _NAME_RE = re.compile(r'^\d{4}-\d{2}-\d{2}T\d{6}\.jpg$')
@@ -63,6 +88,7 @@ _MAX_FRAME_BYTES = 4 * 1024 * 1024
 
 _pause = time.sleep  # names of their own, so tests can skip the waits
 _now = time.monotonic
+_wall = time.time  # clips are matched to journal times, which are wall-clock
 
 
 class CameraError(Exception):
@@ -99,7 +125,10 @@ class Stream:
         self._lock = threading.Lock()
         self._frame = None
         self._at = 0.0
+        self._wall_at = 0.0
         self._count = 0
+        # (wall time, frame) every CLIP_STEP_S, oldest first, for clips
+        self._recent = collections.deque(maxlen=int(BUFFER_S / CLIP_STEP_S))
         self._ready = threading.Event()
         threading.Thread(target=self._read, name='camera-reader', daemon=True).start()
 
@@ -132,8 +161,11 @@ class Stream:
         with self._lock:
             self._frame = frame
             self._at = _now()
+            self._wall_at = _wall()
             self._count += 1
             settled = self._count >= WARMUP_FRAMES
+            if settled and (not self._recent or self._wall_at - self._recent[-1][0] >= CLIP_STEP_S):
+                self._recent.append((self._wall_at, frame))
         if settled:
             self._ready.set()
 
@@ -143,6 +175,18 @@ class Stream:
             if self._count < WARMUP_FRAMES or _now() - self._at > STALL_AFTER_S:
                 return None
             return self._frame
+
+    def latest_with_time(self):
+        """The newest settled frame and its wall-clock time, or None."""
+        with self._lock:
+            if self._count < WARMUP_FRAMES or _now() - self._at > STALL_AFTER_S:
+                return None
+            return self._frame, self._wall_at
+
+    def frames_between(self, start, end):
+        """Buffered (wall time, frame) pairs from start to end, oldest first."""
+        with self._lock:
+            return [(at, f) for at, f in self._recent if start <= at <= end]
 
     def wait_for_frame(self):
         self._ready.wait(START_WAIT_S)
@@ -228,12 +272,16 @@ def frame_time(path):
 
 
 def prune(now=None):
-    """Delete frames older than KEEP_DAYS. Returns how many went."""
+    """Delete frames and clips older than KEEP_DAYS. Returns how many went."""
     cutoff = ((now or datetime.now()) - timedelta(days=KEEP_DAYS)).strftime(NAME_FORMAT)
     old = [n for n in frame_names() if n < cutoff]
     for name in old:
         os.remove(os.path.join(FRAMES_DIR, name))
-    return len(old)
+    # A clip's name is a frame name without the .jpg, so the same cutoff sorts it
+    old_clips = [c for c in clip_ids() if c < cutoff]
+    for clip_id in old_clips:
+        shutil.rmtree(os.path.join(CLIPS_DIR, clip_id))
+    return len(old) + len(old_clips)
 
 
 def snap(failing, now=None):
@@ -272,20 +320,208 @@ def run_forever(sleep=time.sleep, clock=time.time):
         failing = snap(failing)
 
 
+# ----- Feed clips -----
+
+def clip_ids():
+    """Saved clip names, oldest first. Anything else in the folder is ignored."""
+    try:
+        names = os.listdir(CLIPS_DIR)
+    except FileNotFoundError:
+        return []
+    return sorted(n for n in names if _CLIP_ID_RE.fullmatch(n))
+
+
+def clip_id_for(ts):
+    """The clip name for a journal event's ts ("2026-11-15T15:30:01")."""
+    return datetime.fromisoformat(ts).strftime(CLIP_ID_FORMAT)
+
+
+def _valid_clip_id(clip_id):
+    if not isinstance(clip_id, str) or not _CLIP_ID_RE.fullmatch(clip_id):
+        return False
+    try:
+        datetime.strptime(clip_id, CLIP_ID_FORMAT)
+    except ValueError:
+        return False
+    return True
+
+
+def clip_info(clip_id):
+    """A saved clip's frame count and the frame where the feed has landed, or
+    None when there is no such clip."""
+    if not _valid_clip_id(clip_id):
+        return None
+    try:
+        with open(os.path.join(CLIPS_DIR, clip_id, 'clip.json')) as f:
+            meta = json.load(f)
+        return {'frames': int(meta['frames']), 'landed': int(meta['landed'])}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def clip_frame_path(clip_id, index):
+    """The file for one frame of a clip, or None. Both parts are checked here,
+    so nothing from a request reaches the filesystem unchecked."""
+    info = clip_info(clip_id)
+    if info is None or not isinstance(index, int) or not 0 <= index < info['frames']:
+        return None
+    return os.path.join(CLIPS_DIR, clip_id, f"{index:03d}.jpg")
+
+
+def clip_window(event):
+    """(start, end, landed_at) in wall-clock seconds for a journal event, or
+    None when it gets no clip. A dispense is journaled as it finishes, so it
+    started duration_s earlier."""
+    if event.get('event') not in _CLIP_EVENTS:
+        return None
+    if event.get('event') == 'dispense' and event.get('source') == 'graze':
+        return None
+    try:
+        finished = datetime.fromisoformat(event['ts']).timestamp()
+        duration = float(event.get('duration_s') or 0)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return finished - duration - CLIP_BEFORE_S, finished + CLIP_AFTER_S, finished
+
+
+def save_clip(clip_id, frames, landed_at):
+    """Write a clip's frames and clip.json, all or nothing. Returns its path,
+    or None when a clip by that name already exists."""
+    final = os.path.join(CLIPS_DIR, clip_id)
+    if os.path.exists(final):
+        return None
+    os.makedirs(CLIPS_DIR, exist_ok=True)
+    tmp = os.path.join(CLIPS_DIR, f".{clip_id}.part")
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.makedirs(tmp)
+    for i, (_, frame) in enumerate(frames):
+        with open(os.path.join(tmp, f"{i:03d}.jpg"), 'wb') as f:
+            f.write(frame)
+    # The first frame taken after the food landed; the player opens here
+    # when motion is reduced
+    landed = next((i for i, (at, _) in enumerate(frames) if at >= landed_at), len(frames) - 1)
+    with open(os.path.join(tmp, 'clip.json'), 'w') as f:
+        json.dump({'frames': len(frames), 'landed': landed}, f)
+    # Rename: the dashboard never sees a half-written clip
+    os.replace(tmp, final)
+    return final
+
+
+class ClipWatcher:
+    """Reads new journal lines and cuts a clip once each event's window has passed.
+
+    Starts at the journal's end: events from before the camera started get no
+    clip, because their frames were never in memory."""
+
+    def __init__(self, path=EVENTS_FILE):
+        self.path = path
+        try:
+            self._offset = os.path.getsize(path)
+        except OSError:
+            self._offset = 0
+        self._pending = []   # (due wall time, clip id, window)
+        self._failing = False
+
+    def _new_events(self):
+        try:
+            size = os.path.getsize(self.path)
+        except OSError:
+            return []
+        if size < self._offset:   # replaced or cut down: start over at its end
+            self._offset = size
+            return []
+        if size == self._offset:
+            return []
+        with open(self.path, 'rb') as f:
+            f.seek(self._offset)
+            data = f.read(size - self._offset)
+        # A line still being written waits for the next read
+        complete = data[:data.rfind(b'\n') + 1]
+        self._offset += len(complete)
+        found = []
+        for line in complete.decode('utf-8', 'replace').splitlines():
+            try:
+                found.append(json.loads(line))
+            except ValueError:
+                continue
+        return found
+
+    def poll(self, now=None):
+        """One look at the journal; cuts any clip now due. Returns clips saved."""
+        now = _wall() if now is None else now
+        for event in self._new_events():
+            window = clip_window(event)
+            if window:
+                self._pending.append((window[1] + 1, clip_id_for(event['ts']), window))
+        due = [p for p in self._pending if p[0] <= now]
+        self._pending = [p for p in self._pending if p[0] > now]
+        saved = []
+        for _, clip_id, (start, end, landed_at) in due:
+            if self._cut(clip_id, start, end, landed_at):
+                saved.append(clip_id)
+        return saved
+
+    def _cut(self, clip_id, start, end, landed_at):
+        stream = _stream
+        frames = stream.frames_between(start, end) if stream else []
+        try:
+            if len(frames) < 2:
+                raise CameraError("the camera had no frames from then")
+            save_clip(clip_id, frames, landed_at)
+        except (CameraError, OSError) as e:
+            # One line per outage, like the shots
+            if not self._failing:
+                log.warning(f"No feed clip for {clip_id}: {e} — feeding is unaffected")
+            self._failing = True
+            return False
+        self._failing = False
+        return True
+
+
+def watch_forever(watcher=None, sleep=time.sleep):
+    watcher = watcher or ClipWatcher()
+    while True:
+        try:
+            watcher.poll()
+        except Exception:
+            # A bug, not an outage: keep the traceback and keep watching
+            log.exception("Feed clip watcher failed unexpectedly — feeding is unaffected")
+        sleep(WATCH_EVERY_S)
+
+
 def start():
-    """Start the capture thread; None where there is no camera to run."""
+    """Start the capture and clip threads; None where there is no camera to run."""
     if not enabled():
         return None
     thread = threading.Thread(target=run_forever, name='camera', daemon=True)
     thread.start()
+    # Made here, not in the thread: the journal's end is taken at startup
+    watcher = ClipWatcher()
+    threading.Thread(target=watch_forever, args=(watcher,), name='camera-clips', daemon=True).start()
     return thread
 
 
+def live_frame():
+    """The stream's newest frame and when it was taken, or None when the
+    stream isn't delivering. Read by the web thread; the stream guards it."""
+    stream = _stream
+    got = stream.latest_with_time() if stream else None
+    if not got:
+        return None
+    frame, at = got
+    return frame, datetime.fromtimestamp(at)
+
+
 def status(now=None):
-    """Newest frame and whether it is fresh, for the dashboard. None where
-    the feeder has no camera."""
+    """Newest picture and whether it is fresh, for the dashboard. None where
+    the feeder has no camera. While the stream runs the picture is seconds
+    old; otherwise it is the last saved frame."""
     if not enabled():
         return None
+    live = live_frame()
+    if live:
+        taken = live[1].replace(microsecond=0)
+        return {'online': True, 'frame': taken.strftime(NAME_FORMAT), 'taken': taken}
     latest = latest_frame()
     if not latest:
         return {'online': False, 'frame': None, 'taken': None}

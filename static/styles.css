@@ -770,7 +770,7 @@ body {
     height: 12px;
     border: 3px solid var(--color-accent-dark);
     background: var(--color-surface);
-    cursor: default;
+    cursor: pointer;
 }
 
 .timeline-dot.extra.is-past {
@@ -2606,6 +2606,75 @@ body:has(.sheet[open]) {
 }
 
 body:has(.bowl-full[open]) { overflow: hidden; }
+
+/* ===== Feed clips ===== */
+.clip-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.clip-row[hidden] { display: none; }
+
+.clip-watch {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    border: 2px solid var(--color-primary);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-primary);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.clip-watch:hover {
+    background: var(--color-primary);
+    color: var(--color-on-primary);
+}
+
+.clip-note {
+    color: var(--color-text-muted);
+    font-size: var(--fs-sm);
+}
+
+/* Room under the picture for the controls */
+.clip-player img { max-height: calc(100dvh - 136px); }
+
+.clip-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0.9rem 0.75rem;
+}
+
+.clip-play {
+    min-width: 72px;
+    min-height: 44px;
+    border: 2px solid #fff;
+    border-radius: var(--radius-md);
+    background: none;
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.clip-scrub {
+    flex: 1;
+    min-width: 0;
+    accent-color: #fff;
+}
+
+/* Its own line above the controls, so the slider keeps its width on a phone */
+.clip-caption {
+    order: -1;
+    flex-basis: 100%;
+    font-size: var(--fs-sm);
+}
 
 /* ===== Passcode lock ===== */
 .lock-icon { display: none; }

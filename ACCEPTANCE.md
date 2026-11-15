@@ -1,39 +1,46 @@
-# Slate: PetFeedr's own colours
+# Feed clips: see the bowl before and after every dispense
 
-Status: shipped
+Status: draft
 
-Intent: PetFeedr drops the espresso, cream and yellow it borrowed from
-MarshWorks and gets a palette of its own that reads calm and reliable:
-blue-grey ink, a soft sky blue and a cool off-white, light and dark. No
-reds or oranges in the palette, so late and missed are the only warm
-colours on screen. (Berry, plum and coral, was built first and set aside
-as too brash.) The layout and type stay as they are; the
-MarshWorks credit in the footer stays as it is.
+Intent: The bowl picture answers "did food come out?" without guesswork.
+The camera keeps the last few seconds of its stream in memory. When a
+dispense or graze pulse lands it saves a short clip: 10 s before to 30 s
+after, at 2 frames a second. Manual and Porch feeds get clips too; the
+journal records them as dispenses like any other. Tapping that feed on the timeline plays the
+clip as a flipbook. The top panel shows a frame seconds old instead of up
+to 5 minutes old. The feed path never knows the camera exists: the camera
+watches feeding_events.jsonl, the same journal the feeds already write.
 
 ## Done when
 
-- [test] Every --color-* token in both theme blocks takes its Slate value.
-      Text on its background meets WCAG AA (4.5:1 body, 3:1 large text and
-      icons) in light and dark. An existing or new contrast test checks this.
-- [check] The 72 hard-coded colours in styles.css are each either moved to
-      a token or kept on purpose with a comment (the food stays kibble-tan).
-      None still reads as espresso or yellow.
-- [test] Status colours stay distinct from the accent: "late" (warning) and
-      "missed" (danger) don't read as the accent. The test checks hue distance,
-      not just contrast.
-- [test] Small / medium / large portion colours stay distinct from each
-      other in both themes.
-- [check] The header P mark, icon.svg, logo.svg, the manifest's
-      theme_color and theme.js's status-bar colours use Slate, so the home-
-      screen icon and browser chrome match the app.
-- [check] The bar over the bowl picture stays readable over a real photo
-      in light and dark.
-- [check] Light and dark at 320/390px; side-by-side shots against Kibble.
+- [test] camera.py still never imports feeder_core or takes STATE_LOCK, and
+      no feed module imports camera (the existing test still passes).
+- [test] A dispense or graze_pulse event in the journal gives one clip in
+      data/clips/, named by the event's ts, with frames from about 10 s
+      before to 30 s after. Events from before the camera started give none.
+- [test] A clip is never cut short by the next event: two pulses close
+      together each get their own clip.
+- [test] With the webcam unplugged or jammed, feeding and the journal are
+      untouched; no clip is made, and the log notes it once.
+- [test] Clips older than 14 days are pruned, like frames.
+- [test] The clip route takes an event ts, accepts only that exact format,
+      and serves only files under data/clips/ (no path from the request
+      reaches the filesystem). It sits behind the same Host check as
+      /camera/latest.jpg.
+- [test] The top panel's picture is the stream's newest frame from memory
+      (seconds old), refreshed on each poll. The 5-minute saved frames are
+      unchanged.
+- [check] A screen left open and untouched for 10 minutes stops fetching
+      new pictures and says so on the picture; the next tap brings it back.
+- [check] On the phone: tap a past feed on the timeline, the clip plays,
+      and food can be seen landing. Feeds with no clip say so plainly.
+- [check] The flipbook has a pause control, and with reduced motion it
+      opens paused on the "after" frame.
 - [test] All tests pass.
 
 ## Out of scope
 
-- Fonts, layout, the logo/P rebrand (shelved).
-- The MarshWorks footer credit (unchanged; the kit's logo carries its own
-  plate).
+- Live video (decided against: about 1.2 GB an hour per open screen).
+- Encoding to MP4/H.264; clips are plain JPEG frames.
+- Detecting food or cats in the picture.
 - Small graze accuracy (its own hands-on check in OWED).

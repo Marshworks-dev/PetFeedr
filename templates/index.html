@@ -27,7 +27,7 @@
              cache-first copy can't pair last release's CSS with this page -->
         <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css', v=asset_version) }}">
         <!-- Fetch every module in parallel instead of discovering imports one hop at a time -->
-        {% for mod in ['app', 'dom', 'api', 'store', 'toast', 'theme', 'ticker', 'cards/next', 'cards/timeline', 'cards/feed', 'cards/stats', 'cards/hopper', 'cards/camera', 'cards/lock', 'cards/sheet', 'cards/footer'] %}
+        {% for mod in ['app', 'dom', 'api', 'store', 'toast', 'theme', 'ticker', 'cards/next', 'cards/timeline', 'cards/feed', 'cards/stats', 'cards/hopper', 'cards/camera', 'cards/clips', 'cards/lock', 'cards/sheet', 'cards/footer'] %}
         <link rel="modulepreload" href="{{ url_for('static', filename='js/' ~ mod ~ '.js') }}">
         {% endfor %}
         <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
@@ -144,6 +144,8 @@
                         </button>
                     </div>
                     <div id="timeline-body"></div>
+                    {# A tapped feed's clips (cards/clips.js) #}
+                    <div class="clip-row" id="clip-row" hidden></div>
                     <div class="daily-summary">
                         <span class="daily-label">Daily Total</span>
                         <span class="daily-value" id="daily-total"></span>
@@ -204,6 +206,20 @@
                 <button type="button" class="bowl-close" id="bowl-close" aria-label="Close picture">×</button>
             </div>
             <img id="bowl-full-frame" alt="" width="1280" height="720">
+        </dialog>
+
+        <!-- A feed's clip as a flipbook (cards/clips.js) -->
+        <dialog class="bowl-full clip-player" id="clip-player" aria-labelledby="clip-title">
+            <div class="bowl-full-bar">
+                <h2 id="clip-title"></h2>
+                <button type="button" class="bowl-close" id="clip-close" aria-label="Close clip">×</button>
+            </div>
+            <img id="clip-frame" alt="" width="1280" height="720">
+            <div class="clip-controls">
+                <button type="button" class="clip-play" id="clip-play" aria-pressed="false">Play</button>
+                <input type="range" class="clip-scrub" id="clip-scrub" min="0" max="0" value="0" aria-label="Clip position">
+                <span class="clip-caption" id="clip-caption"></span>
+            </div>
         </dialog>
 
         <!-- Schedule editor: bottom sheet on phones, centered panel on desktop.

@@ -2520,6 +2520,31 @@ class TestCamera(CameraCase):
             self.assertNotIn('camera', (repo / feed_module).read_text(), feed_module)
 
 
+class TestMicOff(unittest.TestCase):
+    """The webcam's microphone never becomes a device on the Pi."""
+
+    def setUp(self):
+        from pathlib import Path
+        self.repo = Path(__file__).parent
+
+    def test_the_usb_audio_driver_is_refused_not_just_blacklisted(self):
+        conf = (self.repo / 'ops/modprobe/petfeedr-no-usb-audio.conf').read_text().splitlines()
+        self.assertIn('blacklist snd_usb_audio', conf)
+        # A blacklist alone still lets a by-hand modprobe load it
+        self.assertIn('install snd_usb_audio /bin/false', conf)
+
+    def test_setup_installs_it_and_the_service_cannot_gain_privileges(self):
+        setup = (self.repo / 'setup-pi.sh').read_text()
+        self.assertIn('ops/modprobe/petfeedr-no-usb-audio.conf" /etc/modprobe.d/', setup)
+        unit = setup[setup.index('[Service]'):setup.index('[Install]')]
+        self.assertIn('\nNoNewPrivileges=yes\n', unit)
+
+    def test_the_prod_smoke_checks_both(self):
+        ship = (self.repo / 'ship.sh').read_text()
+        self.assertIn('test ! -e /sys/module/snd_usb_audio', ship)
+        self.assertIn('-p NoNewPrivileges --value', ship)
+
+
 class TestCameraOffPi(TempCwd):
     def test_no_camera_off_a_pi(self):
         import camera
@@ -2615,6 +2640,239 @@ class TestCameraDashboard(CameraCase):
         # No blank panel: the Feed card is drawn as it was before the camera
         self.assertIsNone(self.view_state._camera_card(datetime(2026, 11, 14, 16, 30, 0)))
         self.assertIsNone(self.view_state.build()['camera'])
+
+
+class BufferedStream:
+    """Stands in for a running Stream: frames every 0.5 s across a time span,
+    each body naming its wall time, and optionally a live newest frame."""
+
+    def __init__(self, start=None, end=None, live=None):
+        self.frames = []
+        if start is not None:
+            at = start
+            while at <= end:
+                self.frames.append((at, b'\xff\xd8 frame at %.1f' % at))
+                at += 0.5
+        self.live = live
+
+    def frames_between(self, start, end):
+        return [(at, f) for at, f in self.frames if start <= at <= end]
+
+    def latest_with_time(self):
+        return self.live
+
+
+class TestFeedClips(CameraCase):
+    """A clip of the bowl around every dispense and graze pulse."""
+
+    FED = datetime(2026, 11, 15, 15, 30, 1)
+
+    def _journal(self, **event):
+        with open('feeding_events.jsonl', 'a') as f:
+            f.write(json.dumps(event) + '\n')
+
+    def _stream_around(self, at=None):
+        t = (at or self.FED).timestamp()
+        return BufferedStream(t - 60, t + 60)
+
+    def test_a_dispense_gets_a_clip_from_10s_before_to_30s_after(self):
+        t = self.FED.timestamp()
+        with patch.object(self.camera, '_stream', self._stream_around()):
+            watcher = self.camera.ClipWatcher()
+            self._journal(ts=self.FED.isoformat(), event='dispense', source='scheduled', duration_s=2.0)
+            # The window is still open: nothing yet
+            self.assertEqual(watcher.poll(now=t + 20), [])
+            self.assertEqual(watcher.poll(now=t + 31), ['2026-11-15T153001'])
+        info = self.camera.clip_info('2026-11-15T153001')
+        # 2 s of dispensing + 10 s before + 30 s after, 2 frames a second
+        self.assertEqual(info['frames'], 85)
+        first = self.camera.clip_frame_path('2026-11-15T153001', 0)
+        with open(first, 'rb') as f:
+            self.assertEqual(f.read(), b'\xff\xd8 frame at %.1f' % (t - 12))
+        # The player's "after" frame is the first one once the dispense ended
+        self.assertEqual(info['landed'], 24)
+        self.assertEqual(os.listdir(self.camera.CLIPS_DIR), ['2026-11-15T153001'])   # no .part left
+
+    def test_events_from_before_the_camera_started_get_no_clip(self):
+        self._journal(ts=self.FED.isoformat(), event='dispense', source='scheduled', duration_s=0.3)
+        with patch.object(self.camera, '_stream', self._stream_around()):
+            watcher = self.camera.ClipWatcher()
+            self.assertEqual(watcher.poll(now=self.FED.timestamp() + 60), [])
+        self.assertEqual(self.camera.clip_ids(), [])
+
+    def test_each_graze_pulse_gets_its_own_whole_clip_and_the_closing_dispense_none(self):
+        second = self.FED + timedelta(seconds=5)
+        with patch.object(self.camera, '_stream', self._stream_around()):
+            watcher = self.camera.ClipWatcher()
+            self._journal(ts=self.FED.isoformat(), event='graze_pulse', pulse=1, of=2)
+            self._journal(ts=second.isoformat(), event='graze_pulse', pulse=2, of=2)
+            self._journal(ts=second.isoformat(), event='dispense', source='graze', duration_s=1800.3)
+            saved = watcher.poll(now=self.FED.timestamp() + 31)
+            saved += watcher.poll(now=self.FED.timestamp() + 37)
+        self.assertEqual(saved, ['2026-11-15T153001', '2026-11-15T153006'])
+        # The second pulse's clip runs its full 40 s; the first one's end didn't cut it
+        for clip_id in saved:
+            self.assertEqual(self.camera.clip_info(clip_id)['frames'], 81)
+
+    def test_a_line_still_being_written_waits_for_the_next_read(self):
+        with patch.object(self.camera, '_stream', self._stream_around()):
+            watcher = self.camera.ClipWatcher()
+            line = json.dumps({'ts': self.FED.isoformat(), 'event': 'dispense', 'source': 'manual'})
+            with open('feeding_events.jsonl', 'a') as f:
+                f.write(line[:20])
+            self.assertEqual(watcher.poll(now=self.FED.timestamp() + 31), [])
+            with open('feeding_events.jsonl', 'a') as f:
+                f.write(line[20:] + '\n')
+            self.assertEqual(watcher.poll(now=self.FED.timestamp() + 31), ['2026-11-15T153001'])
+
+    def test_no_camera_means_no_clip_one_warning_and_an_untouched_journal(self):
+        watcher = self.camera.ClipWatcher()
+        self._journal(ts=self.FED.isoformat(), event='dispense', source='scheduled', duration_s=0.3)
+        later = self.FED + timedelta(hours=1)
+        self._journal(ts=later.isoformat(), event='dispense', source='scheduled', duration_s=0.3)
+        with open('feeding_events.jsonl') as f:
+            journal = f.read()
+        with self.assertLogs('petfeedr', 'WARNING') as logs:
+            self.assertEqual(watcher.poll(now=later.timestamp() + 60), [])
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn('feeding is unaffected', logs.records[0].getMessage())
+        self.assertEqual(self.camera.clip_ids(), [])
+        with open('feeding_events.jsonl') as f:
+            self.assertEqual(f.read(), journal)
+        # Frames coming back: the next feed gets its clip, and no new warning
+        third = later + timedelta(hours=1)
+        with patch.object(self.camera, '_stream', self._stream_around(third)):
+            self._journal(ts=third.isoformat(), event='dispense', source='manual', duration_s=0.3)
+            self.assertEqual(watcher.poll(now=third.timestamp() + 31), ['2026-11-15T173001'])
+
+    def test_a_watcher_bug_is_logged_and_never_escapes(self):
+        watcher = MagicMock()
+        watcher.poll.side_effect = [ZeroDivisionError("bug"), None]
+        sleeps = []
+
+        def sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) >= 2:
+                raise StopIteration
+
+        with self.assertLogs('petfeedr', 'ERROR') as logs, self.assertRaises(StopIteration):
+            self.camera.watch_forever(watcher, sleep=sleep)
+        self.assertEqual(len(logs.records), 1)
+        self.assertEqual(watcher.poll.call_count, 2)   # kept watching after the bug
+
+    def test_the_stream_keeps_a_frame_every_half_second_for_clips(self):
+        stream = object.__new__(self.camera.Stream)
+        stream._lock = __import__('threading').Lock()
+        stream._frame, stream._at, stream._wall_at, stream._count = None, 0.0, 0.0, 0
+        stream._recent = __import__('collections').deque(maxlen=120)
+        stream._ready = MagicMock()
+        clock = [1000.0]
+        with patch.object(self.camera, '_wall', side_effect=lambda: clock[0]):
+            for _ in range(self.camera.WARMUP_FRAMES + 25):   # 5 a second for 5 s once settled
+                stream._keep(JPEG)
+                clock[0] += 0.2
+        kept = [at for at, _ in stream._recent]
+        self.assertEqual(len(kept), 9)
+        self.assertTrue(all(b - a >= 0.5 - 1e-9 for a, b in zip(kept, kept[1:])))
+
+    def test_clips_older_than_14_days_are_pruned(self):
+        now = datetime(2026, 11, 29, 16, 0, 0)
+        for clip_id in ('2026-11-15T155959', '2026-11-15T160001'):
+            os.makedirs(os.path.join(self.camera.CLIPS_DIR, clip_id))
+        os.makedirs(os.path.join(self.camera.CLIPS_DIR, 'notes'))
+        self.assertEqual(self.camera.prune(now), 1)
+        self.assertEqual(sorted(os.listdir(self.camera.CLIPS_DIR)), ['2026-11-15T160001', 'notes'])
+
+
+class TestFeedClipRoutes(CameraCase):
+    def setUp(self):
+        super().setUp()
+        import web_interface
+        import view_state
+        self.view_state = view_state
+        self.client = web_interface.app.test_client()
+        t = datetime(2026, 11, 15, 15, 30, 1).timestamp()
+        self.camera.save_clip('2026-11-15T153001', [(t, b'\xff\xd8 zero'), (t + 0.5, b'\xff\xd8 one')], t)
+
+    def test_serves_a_clip_frame(self):
+        resp = self.client.get('/camera/clips/2026-11-15T153001/1.jpg')
+        self.assertEqual((resp.status_code, resp.mimetype, resp.data), (200, 'image/jpeg', b'\xff\xd8 one'))
+        resp.close()
+
+    def test_only_a_real_clip_name_and_frame_index_reach_a_file(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("08:00,small\n")
+        for path in ('/camera/clips/2026-11-15T153001/2.jpg',          # past the last frame
+                     '/camera/clips/2026-11-15T153001/-1.jpg',
+                     '/camera/clips/2026-11-15T153001/clip.json',
+                     '/camera/clips/2026-11-15T153001/x.jpg',
+                     '/camera/clips/2026-13-45T999999/0.jpg',           # shaped right, no such time
+                     '/camera/clips/2026-11-15T153002/0.jpg',           # no such clip
+                     '/camera/clips/..%2f..%2ffeeding_schedules.txt/0.jpg',
+                     '/camera/clips/../../feeding_schedules.txt',
+                     '/camera/clips/.2026-11-15T153001.part/0.jpg',
+                     '/data/clips/2026-11-15T153001/000.jpg'):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+        self.assertIsNone(self.camera.clip_frame_path('../../feeding_schedules', 0))
+        # The name check stands on its own, not on strptime catching a trailing newline
+        self.assertIsNone(self.camera._CLIP_ID_RE.fullmatch('2026-11-15T153001\n'))
+        self.assertIsNone(self.camera.clip_frame_path('2026-11-15T153001\n', 0))
+        self.assertIsNone(self.camera.clip_frame_path('2026-11-15T153001', '0'))
+
+    def test_route_is_read_only_and_host_checked(self):
+        self.assertEqual(self.client.post('/camera/clips/2026-11-15T153001/0.jpg').status_code, 405)
+        resp = self.client.get('/camera/clips/2026-11-15T153001/0.jpg', headers={'Host': 'evil.example:5000'})
+        self.assertEqual(resp.status_code, 421)
+
+    def test_the_panel_shows_the_live_frame_while_the_stream_runs(self):
+        taken = datetime(2026, 11, 15, 16, 4, 12, 500000)
+        live = BufferedStream(live=(b'\xff\xd8 live', taken.timestamp()))
+        self._frame(datetime(2026, 11, 15, 15, 59, 30), b'\xff\xd8 saved')
+        with patch.object(self.camera, '_stream', live):
+            resp = self.client.get('/camera/latest.jpg')
+            self.assertEqual(resp.data, b'\xff\xd8 live')
+            self.assertEqual(resp.headers['Cache-Control'], 'no-cache')
+            resp.close()
+            card = self.view_state._camera_card(taken)
+        self.assertEqual((card['online'], card['label']), (True, '4:04 PM'))
+        self.assertEqual(card['src'], '/camera/latest.jpg?t=2026-11-15T160412.jpg')
+        # Stream not delivering: back to the newest saved frame
+        with patch.object(self.camera, '_stream', BufferedStream(live=None)):
+            resp = self.client.get('/camera/latest.jpg')
+            self.assertEqual(resp.data, b'\xff\xd8 saved')
+            resp.close()
+
+    def test_a_fed_slot_lists_its_clips_and_says_when_one_is_missing(self):
+        fed = [{'ts': '2026-11-15T15:30:01', 'event': 'graze_pulse', 'pulse': 1, 'of': 2},
+               {'ts': '2026-11-15T16:00:01', 'event': 'graze_pulse', 'pulse': 2, 'of': 2}]
+        out = self.view_state._clips(fed, '3:30 PM', now=datetime(2026, 11, 15, 17, 0))
+        self.assertEqual(out['clips'], [{'id': '2026-11-15T153001', 'title': '3:30 PM graze, pulse 1 of 2',
+                                         'frames': 2, 'landed': 0}])
+        self.assertEqual(out['clip_note'], 'Some pulses have no clip')
+        # Just fed: the clip is still being cut, not missing
+        out = self.view_state._clips(fed, '3:30 PM', now=datetime(2026, 11, 15, 16, 0, 20))
+        self.assertEqual(out['clip_note'], 'Saving the clip…')
+        out = self.view_state._clips(fed[1:], '3:30 PM', now=datetime(2026, 11, 15, 17, 0))
+        self.assertEqual((out['clips'], out['clip_note']), ([], 'No clip for this feed'))
+        # Not fed yet: nothing to say
+        self.assertEqual(self.view_state._clips([], '10:00 PM'), {'clips': [], 'clip_note': None})
+
+    def test_a_manual_feed_on_the_bar_carries_its_clip(self):
+        now = datetime.now().replace(microsecond=0)
+        t = now.timestamp()
+        clip_id = now.strftime(self.camera.CLIP_ID_FORMAT)
+        self.camera.save_clip(clip_id, [(t, b'\xff\xd8 a'), (t + 0.5, b'\xff\xd8 b')], t)
+        with open('feeding_events.jsonl', 'w') as f:
+            f.write(json.dumps({'ts': now.isoformat(), 'event': 'dispense', 'source': 'manual',
+                                'portion': 'small', 'duration_s': 0.3}) + '\n')
+        extras = self.view_state.build()['timeline']['extras']
+        self.assertEqual([c['id'] for c in extras[0]['clips']], [clip_id])
+
+    def test_no_camera_no_clip_buttons(self):
+        with patch('camera.on_raspberry_pi', return_value=False), \
+             patch.dict(os.environ, {k: v for k, v in os.environ.items() if k != 'PETFEEDR_CAMERA'}, clear=True):
+            out = self.view_state._clips([{'ts': '2026-11-15T15:30:01', 'event': 'dispense'}], '3:30 PM')
+        self.assertEqual(out, {'clips': [], 'clip_note': None})
 
 
 class PasscodeCase(TempCwd):

@@ -84,6 +84,14 @@ smoke() {
         || fail "Simulation check (service env): $verdict"
     echo "  $verdict"
 
+    # The webcam's mic stays off (ops/modprobe/petfeedr-no-usb-audio.conf), and
+    # the service can't gain the privileges to turn it back on
+    pi "test ! -e /sys/module/snd_usb_audio" \
+        || fail "USB audio driver is loaded, so the webcam mic is live: ssh $PI_HOST 'arecord -l'"
+    [ "$(pi 'systemctl show petfeedr -p NoNewPrivileges --value' | tail -1)" = "yes" ] \
+        || fail "petfeedr.service lacks NoNewPrivileges=yes: re-run setup-pi.sh on the Pi"
+    echo "  webcam mic off; service can't gain privileges"
+
     local since
     since=$(pi "systemctl show petfeedr -p ActiveEnterTimestamp --value" | tail -1)
     if pi "sudo journalctl -u petfeedr --since '$since' --no-pager" | grep -q 'Traceback'; then

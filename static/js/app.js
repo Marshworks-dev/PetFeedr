@@ -15,6 +15,7 @@ import { initHopper, renderHopper } from './cards/hopper.js';
 import { initFeedPanel } from './cards/feedpanel.js';
 import { watchPours } from './pour.js';
 import { initCamera, renderCamera } from './cards/camera.js';
+import { initClips, renderClips, clipPlayerOpen } from './cards/clips.js';
 import { initLock, renderLock } from './cards/lock.js';
 import { initSheet, renderSheet } from './cards/sheet.js';
 import { renderFooter, setOffline } from './cards/footer.js';
@@ -47,7 +48,7 @@ function maybeReloadForDeploy() {
     // Never under work in progress — not even in the background, where a
     // half-typed feeding time would be lost without anyone seeing why
     const typing = ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName);
-    if ($('#schedule-sheet').open || !$('#feed-panel').hidden || typing) return;
+    if ($('#schedule-sheet').open || !$('#feed-panel').hidden || clipPlayerOpen() || typing) return;
     if (document.hidden || Date.now() - lastInteraction > DEPLOY_RELOAD_IDLE_MS) location.reload();
 }
 
@@ -74,6 +75,8 @@ function registerCards() {
     register(s => s.stats, renderStats);
     register(s => s.hopper, renderHopper);
     register(s => s.camera, renderCamera);
+    // After the timeline, so the active dot it reads is current
+    register(s => s.timeline, renderClips);
     register(s => s.lock, renderLock);
     register(s => s.schedule, renderSheet);
     register(s => ({ app: s.app, lastFed: s.last_fed }), renderFooter);
@@ -94,6 +97,7 @@ function start() {
     initHopper();
     initFeedPanel();
     initCamera();
+    initClips();  // after initTimeline: its dot handler runs first
     initSheet(initial);
     registerCards();
 

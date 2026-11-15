@@ -27,6 +27,14 @@ echo "📷 Installing ffmpeg for the bowl camera..."
 # Not fatal: a failed install must not stop the feeder being set up
 sudo apt-get install -y ffmpeg || echo "   ⚠️  ffmpeg didn't install — the feeder will run without the camera"
 
+# The webcam's microphone stays off: no USB audio driver, ever
+# (ops/modprobe/petfeedr-no-usb-audio.conf says why)
+echo "🔇 Disabling the webcam microphone..."
+sudo install -m 644 "$PI_PATH/ops/modprobe/petfeedr-no-usb-audio.conf" /etc/modprobe.d/
+# Already loaded (the webcam was plugged in before this ran): unplug the
+# driver now. A desktop audio service may hold it; the reboot clears it then
+sudo modprobe -r snd_usb_audio 2>/dev/null || echo "   ⚠️  USB audio is in use; the mic is gone after the next reboot"
+
 # Create the systemd service file
 echo "📝 Creating systemd service..."
 sudo tee "$SERVICE_FILE" > /dev/null << EOF
@@ -42,6 +50,9 @@ WorkingDirectory=$PI_PATH
 EnvironmentFile=-$PI_PATH/.env
 ExecStart=/bin/bash -c 'source $PI_PATH/venv/bin/activate && python $PI_PATH/PetFeedr.py'
 Restart=always
+# Nothing the feeder runs can gain privileges (no sudo, no setuid), so a
+# compromised web app can't load the mic's driver back in
+NoNewPrivileges=yes
 
 [Install]
 WantedBy=multi-user.target
