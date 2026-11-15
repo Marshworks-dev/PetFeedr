@@ -16,8 +16,7 @@ function draw() {
         <span class="footer-divider">·</span>
         <span class="footer-item ${app.simulation ? 'footer-sim' : ''}">${app.simulation ? 'Simulation' : 'Live'}</span>
         ${lastFed ? html`<span class="footer-divider">·</span><span class="footer-item">Last fed: ${lastFed}</span>` : ''}
-        ${offline ? html`<span class="footer-divider">·</span><span class="footer-item footer-offline" role="status">Can't reach the feeder — retrying</span>` : ''}
-        <span class="footer-divider">·</span>`);
+        ${offline ? html`<span class="footer-divider">·</span><span class="footer-item footer-offline" role="status">Can't reach the feeder — retrying</span>` : ''}`);
 }
 
 export function renderFooter(slice) {

@@ -1720,6 +1720,14 @@ body {
     white-space: nowrap;
 }
 
+/* The dot before the credit wraps with it, so a new line never starts with one.
+   Only once status items are drawn: before the first state, the credit stands alone */
+.status-items:has(.footer-item) + .footer-credit::before {
+    content: "·";
+    opacity: 0.3;
+    margin-right: 0.2em;
+}
+
 .footer-credit img {
     height: 1.4em;
     width: auto;

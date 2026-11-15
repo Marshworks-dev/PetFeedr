@@ -840,6 +840,17 @@ class TestScheduleRoutes(TempCwd):
         self.assertIn('<span class="status-items" id="status-items"></span>', footer)
         self.assertIn('footer-credit', footer.split('id="status-items"></span>', 1)[1])
 
+    def test_footer_dot_wraps_with_the_credit(self):
+        # A divider drawn after the status items wrapped onto the credit's
+        # line at 320px and started it with a stray dot
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/cards/footer.js')) as f:
+            js = f.read()
+        self.assertNotRegex(js, r'footer-divider">·</span>`\);')
+        with open(os.path.join(here, 'static/styles.css')) as f:
+            css = f.read()
+        self.assertIn('.status-items:has(.footer-item) + .footer-credit::before', css)
+
     def test_footer_logo_is_served_offline_and_calls_nowhere(self):
         import re
         with self.client.get('/static/brand/marshworks-logo-espresso.svg') as svg:
