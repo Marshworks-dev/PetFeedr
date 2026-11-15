@@ -898,6 +898,110 @@ class TestKibbleLook(unittest.TestCase):
                 self.assertNotIn(colour, body, f'{rel} still has {colour}')
 
 
+def _font_size_px(css, selector):
+    """The smallest px font-size any rule naming exactly this selector sets, or None.
+    Resolves the --fs-* scale tokens from :root."""
+    import re
+    tokens = dict(re.findall(r'--(fs-[a-z]+):\s*([0-9.]+rem)', css))
+    sizes = []
+    for sel, body in re.findall(r'([^{}]+)\{([^{}]*)\}', css):
+        if selector not in [s.strip() for s in sel.split(',')]:
+            continue
+        for value in re.findall(r'font-size:\s*([^;]+);', body):
+            value = re.sub(r'var\(--(fs-[a-z]+)\)', lambda t: tokens[t.group(1)], value.strip())
+            size = re.fullmatch(r'([0-9.]+)(rem|px)', value)
+            if size:
+                sizes.append(float(size.group(1)) * (16 if size.group(2) == 'rem' else 1))
+    return min(sizes) if sizes else None
+
+
+class TestInputsDontZoom(unittest.TestCase):
+    """iOS Safari zooms the page when a field under 16px takes focus."""
+
+    FIELDS = ('.form-group input', '.form-group select', '.refill-form input',
+              '.refill-form select', '.add-row input[type="time"]', '.lock-dialog input')
+
+    def test_every_field_is_at_least_16px(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static', 'styles.css')) as f:
+            css = f.read()
+        for field in self.FIELDS:
+            size = _font_size_px(css, field)
+            self.assertIsNotNone(size, f'{field} sets no font-size; the browser default is ~13px')
+            self.assertGreaterEqual(size, 16, f'{field} is {size}px')
+
+    # Glyphs sized to fit inside a dot or crumb, not text anyone reads
+    GLYPHS = {'.dot-badge', '.crumb.stopped', '.mark-missed', '.mark-failed'}
+
+    def test_no_text_under_12px(self):
+        import re
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static', 'styles.css')) as f:
+            css = re.sub(r'/\*.*?\*/', '', f.read(), flags=re.S)
+        for sel, _ in re.findall(r'([^{}]+)\{([^{}]*)\}', css):
+            for one in (s.strip() for s in sel.split(',')):
+                if one in self.GLYPHS:
+                    continue
+                size = _font_size_px(css, one)
+                if size is not None:
+                    self.assertGreaterEqual(size, 12, f'{one} is {size}px')
+
+    def test_size_check_catches_a_small_field(self):
+        # Breaker: the refill form shipped with no size, and the add form at 0.9rem
+        self.assertIsNone(_font_size_px('.refill-form input { padding: 8px; }', '.refill-form input'))
+        self.assertEqual(_font_size_px('.a input, .a select { font-size: 0.9rem; }', '.a select'), 14.4)
+        # A later rule that shrinks the field still counts, and so does a token
+        later = ':root { --fs-sm: 0.875rem; } .a input { font-size: 1rem; } .a input { font-size: var(--fs-sm); }'
+        self.assertEqual(_font_size_px(later, '.a input'), 14)
+
+
+def _dead_media_overrides(css):
+    """(selector, property) pairs a @media rule sets that a later plain rule
+    for the same selector sets again: same specificity, so the later one wins
+    and the media rule never applies."""
+    import re
+    css = re.sub(r'/\*.*?\*/', '', css, flags=re.S)
+    plain, media = [], []  # (position, selector, property)
+    depth, start, at_media = 0, 0, []
+    for i, ch in enumerate(css):
+        if ch == '{':
+            head = css[start:i].strip()
+            at_media.append(head.startswith('@media'))
+            depth += 1
+            start = i + 1
+            rule_head = head
+        elif ch == '}':
+            if not at_media.pop():
+                in_media = any(at_media)
+                props = re.findall(r'([a-z-]+)\s*:', css[start:i])
+                for sel in (s.strip() for s in rule_head.split(',')):
+                    for prop in props:
+                        (media if in_media else plain).append((i, sel, prop))
+            depth -= 1
+            start = i + 1
+    return sorted({(sel, prop) for pos, sel, prop in media
+                   for later, psel, pprop in plain
+                   if later > pos and (psel, pprop) == (sel, prop)})
+
+
+class TestNarrowHeader(unittest.TestCase):
+    """At 320px the brand override sat before the base rule and never applied,
+    which pushed the theme button off screen."""
+
+    def test_no_media_override_is_cancelled_by_a_later_rule(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static', 'styles.css')) as f:
+            self.assertEqual(_dead_media_overrides(f.read()), [])
+
+    def test_check_catches_the_shipped_order(self):
+        # Breaker: the order that shipped
+        shipped = ('@media (max-width: 379px) { .h h1 { font-size: 1.45rem; } }\n'
+                   '.h h1 { font-size: 2rem; }')
+        self.assertEqual(_dead_media_overrides(shipped), [('.h h1', 'font-size')])
+        fixed = '.h h1 { font-size: 2rem; }\n@media (max-width: 359px) { .h h1 { font-size: 1.2rem; } }'
+        self.assertEqual(_dead_media_overrides(fixed), [])
+
+
 def _load_check_live():
     import importlib.util
     spec = importlib.util.spec_from_file_location(
@@ -1428,7 +1532,7 @@ class TestGrazeTrail(unittest.TestCase):
                 {'actual_time_24h': '23:20', 'graze': True, 'portion': 'large'}]
         start, end, hours = dashboard.build_timeline(late)
         self.assertGreaterEqual((end - (23 * 60 + 20)) / (end - start), trail_share)
-        self.assertIn('12AM', [h['label'] for h in hours])
+        self.assertIn('12a', [h['label'] for h in hours])
         # A plain last slot keeps the old cap
         _, plain_late, _ = dashboard.build_timeline([{'actual_time_24h': '23:20', 'graze': False,
                                                       'portion': 'large'}])
@@ -1556,6 +1660,13 @@ class TestHopperPanel(TempCwd):
             for name in files:
                 rel = '/' + os.path.relpath(os.path.join(root, name), here).replace(os.sep, '/')
                 self.assertIn(rel, cached, f'{rel} is not precached')
+
+    def test_panel_animates_out_as_it_came_in(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/js/cards/feedpanel.js')) as f:
+            body = f.read()
+        self.assertIn('animate(panel, [TUCKED, SHOWN]', body)
+        self.assertIn('animate(panel, [SHOWN, TUCKED]', body)
 
     def test_learning_hopper_shows_no_bare_question_mark(self):
         # Before the first refill there's no level; a lone "?" told nobody anything

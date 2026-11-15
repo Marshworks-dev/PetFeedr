@@ -220,10 +220,11 @@ def build_timeline(schedules, extras=()):
     timeline_hours = []
     first_hour = ((timeline_start // 60) + 1) * 60
     for mins in range(first_hour, timeline_end, 60):
-        h = mins // 60 % 24  # a bar padded past midnight labels 12AM, 2AM
+        h = mins // 60 % 24  # a bar padded past midnight labels 12a, 2a
         pct = ((mins - timeline_start) / (timeline_end - timeline_start)) * 100
         show_label = (h % 2 == 0)
-        label = f"{h % 12 or 12}{'AM' if h < 12 else 'PM'}" if show_label else None
+        # "6a", "10p": the 7-day chart's format, and "10AM" crowds a 360px bar
+        label = f"{h % 12 or 12}{'a' if h < 12 else 'p'}" if show_label else None
         timeline_hours.append({'label': label, 'pct': pct})
 
     return timeline_start, timeline_end, timeline_hours
