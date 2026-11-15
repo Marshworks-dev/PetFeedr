@@ -1,6 +1,6 @@
 # Feed clips: see the bowl before and after every dispense
 
-Status: draft
+Status: shipped
 
 Intent: The bowl picture answers "did food come out?" without guesswork.
 The camera keeps the last few seconds of its stream in memory. When a
