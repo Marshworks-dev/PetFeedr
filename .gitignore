@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+ENV/
+env/
+.Python
+pip-log.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# PetFeedr - Runtime files (preserved on Pi)
+feeding_schedules.txt
+feeding_log.txt
+feeding_log.txt.*
+todays_schedule.json
+hopper.json
+feeding_events.jsonl
+*.log
+
+# Assistant tooling, per machine
+.claude/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets
+*.env
+.env.*
+
+# Backups (if accidentally placed in repo)
+backups/
+
+data/
+
+# Deploy target (PI_HOST=user@host); per machine, never committed
+.deploy.env
+# Private terms for the personal-info scan (see test_feeder.py)
+.private-terms

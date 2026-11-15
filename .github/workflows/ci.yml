@@ -1,0 +1,32 @@
+name: CI
+
+# Runs the unittest suite on every PR (Dependabot's included) and every push
+# to main. Off a Pi the feeder runs in simulation mode, so no hardware is
+# needed. Branch rules require the check named `test`; ship.sh waits for it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token: nothing here writes to the repo, issues or PRs.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # A venv, not --user: Ubuntu's Python refuses system-wide pip installs
+      - name: Install
+        run: python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt
+      - name: Test
+        # Owner-specific terms for the personal-info scan; never printed
+        env:
+          PRIVATE_TERMS: ${{ secrets.PRIVATE_TERMS }}
+        run: .venv/bin/python -m unittest -q
