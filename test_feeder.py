@@ -815,6 +815,43 @@ class TestScheduleRoutes(TempCwd):
             refs = re.findall(r'(?:src|href)\s*=\s*["\'](https?:)?//|url\(\s*["\']?(?:https?:)?//', body)
             self.assertEqual(refs, [], f'{name} references an outside host')
 
+    def _footer(self):
+        import re
+        html = self.client.get('/').get_data(as_text=True)
+        return re.search(r'<footer class="status-footer">(.*?)</footer>', html, re.S).group(1)
+
+    def test_footer_credits_marshworks_once_as_plain_text(self):
+        import re
+        footer = self._footer()
+        self.assertIn('Made by <img', footer)
+        self.assertIn('alt="MarshWorks"', footer)
+        # A screen reader hears the name once: the alt, nowhere else
+        spoken = re.sub(r'<!--.*?-->', '', footer, flags=re.S)
+        spoken = re.sub(r'<img[^>]*alt="([^"]*)"[^>]*>', r' \1 ', spoken)
+        spoken = re.sub(r'<[^>]+>', ' ', spoken)
+        self.assertEqual(spoken.count('MarshWorks'), 1)
+        # Plain for now: the marshworks.dev link waits for its certificate
+        self.assertNotIn('<a', footer)
+
+    def test_footer_credit_is_in_the_page_not_drawn_by_script(self):
+        # footer.js replaces #status-items on each state, and draws nothing
+        # until state arrives (or ever, offline). The credit must sit outside it.
+        footer = self._footer()
+        self.assertIn('<span class="status-items" id="status-items"></span>', footer)
+        self.assertIn('footer-credit', footer.split('id="status-items"></span>', 1)[1])
+
+    def test_footer_logo_is_served_offline_and_calls_nowhere(self):
+        import re
+        with self.client.get('/static/brand/marshworks-logo-espresso.svg') as svg:
+            self.assertEqual(svg.status_code, 200)
+            body = svg.get_data(as_text=True)
+        self.assertIn('aria-label="MarshWorks"', body)
+        # The only URL in the kit's file is the SVG namespace
+        urls = set(re.findall(r'https?://[^"\s)]+', body))
+        self.assertEqual(urls, {'http://www.w3.org/2000/svg'})
+        sw = self.client.get('/sw.js').get_data(as_text=True)
+        self.assertIn("'/static/brand/marshworks-logo-espresso.svg',", sw)
+
     def test_every_precached_file_is_served(self):
         # cache.addAll rejects the whole install if one entry 404s, which
         # would leave the phone with no offline copy at all.

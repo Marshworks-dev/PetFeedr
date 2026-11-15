@@ -1704,6 +1704,24 @@ body {
     font-weight: 600;
 }
 
+/* The status items lay out as footer items of their own, so they wrap the same as before */
+.status-items {
+    display: contents;
+}
+
+/* "Made by" + the MarshWorks logo: one unit, so a narrow screen moves it to its own line whole */
+.footer-credit {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3em;
+    white-space: nowrap;
+}
+
+.footer-credit img {
+    height: 1.4em;
+    width: auto;
+}
+
 /* ===== Hopper Card ===== */
 .hopper-learning {
     font-size: var(--fs-base);
