@@ -16,7 +16,7 @@ import { openClip } from './clips.js';
 import {
     DAY_MINUTES, STEP_MINUTES, frameMinutes, tsMinutes, nearestFrame, feedMarks,
     blindStretches, valueText, settle, recentDays, clock, pct, nearestFeed, feedName,
-    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions, frameLoader, imgStep,
+    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions, frameLoader, imgStep, stepFeed,
 } from '../history-model.js';
 
 const BLIND_WORDS = { dark: 'dark', blocked: 'lens covered', offline: 'no picture' };
@@ -121,16 +121,24 @@ function renderMarks() {
         })}`);
 }
 
-// The panel for the feed nearest the slider: its name, readings and jumps
+// The panel for the feed nearest the slider: its name, readings and jumps.
+// Always the same height, near a feed or not, so dragging never resizes the
+// dialog and moves the picture
 function renderFeed() {
     const panel = $('#history-feed');
     const near = view ? nearestFeed(view.marks, minute) : null;
     feed = near;
-    panel.hidden = !near;
-    if (!near) return;
-    const index = view.marks.indexOf(near);
-    $('#history-prev').disabled = index <= 0;
-    $('#history-next').disabled = index >= view.marks.length - 1;
+    const marks = view ? view.marks : [];
+    $('#history-prev').disabled = !stepFeed(marks, minute, near, -1);
+    $('#history-next').disabled = !stepFeed(marks, minute, near, 1);
+    if (!near) {
+        const key = JSON.stringify(['none', marks.length > 0]);
+        if (panel.dataset.key === key) return;
+        panel.dataset.key = key;
+        setHTML($('#history-feed-text'), html`<span class="history-note">${marks.length ? 'No feed within an hour' : 'No feeds this day'}</span>`);
+        setHTML($('#history-feed-actions'), html``);
+        return;
+    }
     const since = isToday() ? nowMinute() - near.minutes : Infinity;
     const words = readingWords(near, since);
     const { before, watch: clip, after, noClip } = feedActions(near, view.frames);
@@ -144,7 +152,7 @@ function renderFeed() {
         ${before ? html`<button type="button" class="history-act" data-act="before" aria-label="Before the ${name}">Before</button>` : ''}
         ${clip ? html`<button type="button" class="history-act" data-act="watch" aria-label="Watch the ${name}">▶ Watch</button>` : ''}
         ${after ? html`<button type="button" class="history-act" data-act="after" aria-label="30 minutes after the ${name}">30 min after</button>` : ''}
-        ${noClip ? html`<span class="history-note">No clip of this one</span>` : ''}`);
+        ${noClip ? html`<span class="history-note">No clip</span>` : ''}`);
 }
 
 // Move the picture and every label to the frame nearest the slider
@@ -165,7 +173,8 @@ function pick() {
     renderFeed();
     if (!browsing) return;
     headline(`${view.label} ${clock(at)}`, text);
-    status(text);
+    // The slider's own text value carries the full sentence for screen readers
+    status('');
     want(frameSrc(name), clock(at));
     showFrame(frameSrc(name));
 }
@@ -189,7 +198,7 @@ function jumpBefore(mark) {
     moveTo(mark.minutes);
     const text = `just before the ${feedName(mark)}, from its clip`;
     headline(`${view.label} ${clock(mark.minutes)}`, `${view.label}, ${text}`);
-    status(`${view.label}, ${text}`);
+    status(`Just before the ${feedName(mark)}, from its clip`);
     showSrc(`/camera/clips/${encodeURIComponent(target.clip)}/${target.index}.jpg`, `the picture before the ${feedName(mark)}`);
 }
 
@@ -205,7 +214,7 @@ function jumpAfter(mark) {
     const at = clock(frameMinutes(target.frame));
     const text = `${at} the next day, 30 min after the ${feedName(mark)}`;
     headline(`${at}, next day`, text);
-    status(text);
+    status(`30 min after the ${feedName(mark)}, from the next day`);
     showSrc(frameSrc(target.frame), `${at} the next day`);
 }
 
@@ -255,8 +264,7 @@ async function load(date, { keepTime = true, then = null } = {}) {
         minute = Math.round(frameMinutes(view.frames[view.frames.length - 1]) / STEP_MINUTES) * STEP_MINUTES;
     }
     $('#history-scrub').value = minute;
-    if (!view.frames.length) status('No pictures saved this day');
-    else if (!browsing) status('');
+    status(view.frames.length ? '' : 'No pictures saved this day');
     pick();
     if (then) then();
 }
@@ -302,7 +310,6 @@ export function openHistory(jump = null) {
     minute = DAY_MINUTES - STEP_MINUTES;
     status('');
     setHTML($('#history-marks'), html``);
-    $('#history-feed').hidden = true;
     delete $('#history-feed').dataset.key;
     loader.reset();
     renderLoad();
@@ -335,10 +342,10 @@ export function initHistory() {
         else if (act === 'after') jumpAfter(feed);
         else if (act === 'watch') watch(feed);
     });
-    for (const [id, step] of [['#history-prev', -1], ['#history-next', 1]]) {
+    for (const [id, dir] of [['#history-prev', -1], ['#history-next', 1]]) {
         $(id).addEventListener('click', () => {
-            if (!feed || !view) return;
-            const next = view.marks[view.marks.indexOf(feed) + step];
+            if (!view) return;
+            const next = stepFeed(view.marks, minute, feed, dir);
             if (next) moveTo(next.minutes);
         });
     }

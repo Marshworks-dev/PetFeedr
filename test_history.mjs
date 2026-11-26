@@ -234,3 +234,19 @@ test('a picture that failed is fetched again, not left "loading" forever', () =>
     assert.equal(imgStep('/a.jpg', '/a.jpg', true, 0), 'retry');      // failed: same src again
     assert.equal(imgStep(null, '/a.jpg', false, 0), 'set');
 });
+
+import { stepFeed } from './static/js/history-model.js';
+
+test('‹ › step between feeds, or to the nearest one either side when none is near', () => {
+    const marks = feedMarks([
+        { ts: '2026-11-26T06:30:00', event: 'dispense', source: 'scheduled' },
+        { ts: '2026-11-26T12:00:00', event: 'dispense', source: 'scheduled' },
+        { ts: '2026-11-26T17:30:00', event: 'dispense', source: 'scheduled' }]);
+    assert.equal(stepFeed(marks, 720, marks[1], -1), marks[0]);
+    assert.equal(stepFeed(marks, 720, marks[1], 1), marks[2]);
+    assert.equal(stepFeed(marks, 390, marks[0], -1), null);
+    // 3 PM, nothing within an hour: back to noon, on to 5:30
+    assert.equal(stepFeed(marks, 900, null, -1), marks[1]);
+    assert.equal(stepFeed(marks, 900, null, 1), marks[2]);
+    assert.equal(stepFeed([], 900, null, 1), null);
+});

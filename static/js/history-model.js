@@ -181,6 +181,15 @@ export function afterTarget(mark, frames) {
     return found ? { frame: found } : null;
 }
 
+// The feed ‹ or › goes to: the one before or after the panel's feed, or,
+// with no feed near, the nearest one on that side of the slider. dir -1 | 1
+export function stepFeed(marks, minute, current, dir) {
+    const list = marks || [];
+    if (current) return list[list.indexOf(current) + dir] || null;
+    if (dir < 0) return [...list].reverse().find(m => m.minutes < minute) || null;
+    return list.find(m => m.minutes > minute) || null;
+}
+
 // What the panel offers for a feed: meals get Before and 30 min after when
 // there's a picture to jump to; any feed with a clip gets Watch; a feed that
 // should have a clip and has none says so; missed and failed feeds get nothing

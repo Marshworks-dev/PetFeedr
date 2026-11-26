@@ -3663,3 +3663,37 @@ class TestHistoryModelJS(unittest.TestCase):
         run = subprocess.run([node, '--test', 'test_history.mjs'], cwd=here,
                              capture_output=True, text=True, timeout=60)
         self.assertEqual(run.returncode, 0, run.stdout[-3000:] + run.stderr[-2000:])
+
+
+class TestHistoryDialogKeepsItsSize(unittest.TestCase):
+    """Dragging the bowl history must never resize the dialog: content that
+    comes and goes with the slider sits in fixed-height slots. Pins those
+    rules (and that the panel is never hidden), so a later edit can't
+    quietly bring the jumping back."""
+
+    def setUp(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'static/styles.css')) as f:
+            self.css = f.read()
+        with open(os.path.join(here, 'templates/index.html')) as f:
+            self.page = f.read()
+        with open(os.path.join(here, 'static/js/cards/history.js')) as f:
+            self.js = f.read()
+
+    def _rule(self, selector):
+        import re
+        m = re.search(re.escape(selector) + r'\s*\{([^}]*)\}', self.css)
+        self.assertIsNotNone(m, selector)
+        return m.group(1)
+
+    def test_each_slot_has_a_fixed_height(self):
+        self.assertIn('height: 2.8em', self._rule('.history-feed-text'))
+        self.assertIn('-webkit-line-clamp: 2', self._rule('.history-feed-text'))
+        self.assertIn('height: 44px', self._rule('.history-feed-actions'))
+        self.assertIn('flex-wrap: nowrap', self._rule('.history-feed-actions'))
+        self.assertIn('height: 1.4em', self._rule('.history-status'))
+        self.assertIn('white-space: nowrap', self._rule('.history-status'))
+
+    def test_the_feed_panel_is_never_hidden(self):
+        self.assertIn('<div class="history-feed" id="history-feed">', self.page)
+        self.assertNotIn("$('#history-feed').hidden", self.js)

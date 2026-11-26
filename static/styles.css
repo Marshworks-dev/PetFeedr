@@ -2834,6 +2834,9 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 }
 
 /* The feed nearest the slider */
+/* Fixed heights all the way down: two lines of feed text, one row of
+   buttons, one status line. Content that comes and goes as the slider moves
+   must never resize the dialog, or the picture jumps mid-drag */
 .history-feed { margin-top: 0.4rem; }
 
 .history-feed-head {
@@ -2845,6 +2848,12 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 .history-feed-text {
     flex: 1;
     min-width: 0;
+    height: 2.8em;          /* two lines at line-height 1.4 */
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     font-size: var(--fs-sm);
     text-align: center;
 }
@@ -2865,7 +2874,8 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 
 .history-feed-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    height: 44px;
     justify-content: center;
     align-items: center;
     gap: 0.4rem;
@@ -2892,8 +2902,12 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 }
 
 .history-status {
-    min-height: 1.4em;
+    height: 1.4em;
+    line-height: 1.4;
     margin-top: 0.3rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     font-size: var(--fs-sm);
 }
 
