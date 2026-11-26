@@ -224,3 +224,13 @@ test('the picture reads as loading until the newest one asked for arrives', () =
     loader.reset();
     assert.equal(loader.state, 'shown');
 });
+
+import { imgStep } from './static/js/history-model.js';
+
+test('a picture that failed is fetched again, not left "loading" forever', () => {
+    assert.equal(imgStep('/a.jpg', '/b.jpg', true, 1280), 'set');
+    assert.equal(imgStep('/a.jpg', '/a.jpg', true, 1280), 'none');    // already up
+    assert.equal(imgStep('/a.jpg', '/a.jpg', false, 0), 'none');      // still on its way
+    assert.equal(imgStep('/a.jpg', '/a.jpg', true, 0), 'retry');      // failed: same src again
+    assert.equal(imgStep(null, '/a.jpg', false, 0), 'set');
+});

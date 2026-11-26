@@ -16,7 +16,7 @@ import { openClip } from './clips.js';
 import {
     DAY_MINUTES, STEP_MINUTES, frameMinutes, tsMinutes, nearestFrame, feedMarks,
     blindStretches, valueText, settle, recentDays, clock, pct, nearestFeed, feedName,
-    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions, frameLoader,
+    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions, frameLoader, imgStep,
 } from '../history-model.js';
 
 const BLIND_WORDS = { dark: 'dark', blocked: 'lens covered', offline: 'no picture' };
@@ -59,7 +59,9 @@ function want(src, label) {
 // Put the wanted picture in the img; its load event ends the wait
 function setImg(src) {
     const img = $('#bowl-full-frame');
-    if (img.getAttribute('src') !== src) img.src = src;
+    const step = imgStep(img.getAttribute('src'), src, img.complete, img.naturalWidth);
+    if (step === 'retry') img.removeAttribute('src');
+    if (step !== 'none') img.src = src;
 }
 
 const showFrame = settle(src => {

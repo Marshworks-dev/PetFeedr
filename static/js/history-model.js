@@ -252,6 +252,15 @@ export function frameLoader() {
     };
 }
 
+// What to do with the <img> to get `src` up: 'none' when it's already
+// there or on its way, 'set' for a new address, 'retry' when the same
+// address already failed (re-setting an identical src loads nothing, so
+// the wait would never end)
+export function imgStep(current, src, complete, naturalWidth) {
+    if (current !== src) return 'set';
+    return complete && !naturalWidth ? 'retry' : 'none';
+}
+
 // The last `count` days as { date: 'YYYY-MM-DD', label }, today first, in local time
 export function recentDays(now = new Date(), count = 7) {
     const days = [];
