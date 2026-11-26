@@ -1,6 +1,6 @@
 # Bowl watch: alerts when the camera is blind or a meal goes uneaten
 
-Status: approved
+Status: shipped
 
 Intent: The camera tells you, by Pushover, the two things it can actually
 see: that it can't see (dark, blocked or offline), and that a meal wasn't
