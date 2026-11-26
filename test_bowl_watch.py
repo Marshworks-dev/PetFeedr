@@ -145,7 +145,8 @@ class WatchCase(unittest.TestCase):
         self.addCleanup(os.chdir, self._olddir)
         self.sent = []
         # A frame's bytes say what it shows: b'empty', b'food', b'cat', b'dark' ...
-        self.watch = bw.Watch(read=self._read, send=lambda m, title='': self.sent.append(m))
+        self.watch = bw.Watch(read=self._read, send=lambda m, title='': self.sent.append(m),
+                              background=False)
         env = patch.dict(os.environ, {}, clear=False)
         env.start()
         self.addCleanup(env.stop)
@@ -313,7 +314,8 @@ class TestMealReadings(WatchCase):
 
 class TestNeverRaises(WatchCase):
     def test_a_bug_in_reading_is_logged_not_raised(self):
-        watch = bw.Watch(read=MagicMock(side_effect=RuntimeError('boom')), send=MagicMock())
+        watch = bw.Watch(read=MagicMock(side_effect=RuntimeError('boom')), send=MagicMock(),
+                         background=False)
         with self.assertLogs('petfeedr', 'ERROR'):
             watch.frame_saved('x.jpg', b'x', self.T0)
         with self.assertLogs('petfeedr', 'ERROR'):
@@ -324,6 +326,25 @@ class TestNeverRaises(WatchCase):
         with self.assertLogs('petfeedr', 'ERROR'):
             for minute in range(0, 61, 5):
                 watch.frame_saved('x.jpg', b'dark', self.T0 + minute * 60)
+
+
+class TestClipReadingsInBackground(WatchCase):
+    def test_a_slow_clip_reading_doesnt_hold_up_the_caller(self):
+        import threading
+        release = threading.Event()
+        done = threading.Event()
+
+        def slow_read(jpeg):
+            release.wait(5)
+            done.set()
+            return {'view': 'clear', 'bowl': 'empty', 'specks': None}
+
+        watch = bw.Watch(read=slow_read, send=MagicMock())
+        watch.clip_saved('2026-11-27T153001', [(self.T0 - 1, b'x')], self.T0)
+        # Back already, with the reading still waiting
+        self.assertFalse(done.is_set())
+        release.set()
+        self.assertTrue(done.wait(5))
 
 
 class TestCameraHandsOver(unittest.TestCase):

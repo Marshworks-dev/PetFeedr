@@ -225,9 +225,12 @@ class Watch:
     two threads, so its state sits behind its own lock; pictures are read
     outside it."""
 
-    def __init__(self, read=read_jpeg, send=notify.send, clock=None):
+    def __init__(self, read=read_jpeg, send=notify.send, background=True):
         self._read = read
         self._send = send
+        # Clip readings run on their own thread: up to BEFORE_TRIES decodes
+        # must never hold up the camera's clip thread, whose buffer is a minute
+        self._background = background
         self._lock = threading.Lock()
         self._blind_since = None     # epoch of the first bad frame in a row
         self._blind_alerted = False
@@ -256,6 +259,13 @@ class Watch:
 
     def clip_saved(self, clip_id, frames, landed_at):
         """A dispense's clip: frames are (epoch, jpeg), oldest first."""
+        if self._background:
+            threading.Thread(target=self._clip, args=(clip_id, frames, landed_at),
+                             name='bowl-watch-clip', daemon=True).start()
+        else:
+            self._clip(clip_id, frames, landed_at)
+
+    def _clip(self, clip_id, frames, landed_at):
         try:
             self._before(clip_id, frames, landed_at)
         except Exception:
