@@ -206,6 +206,8 @@
                 <button type="button" class="bowl-close" id="bowl-close" aria-label="Close picture">×</button>
             </div>
             <img id="bowl-full-frame" alt="" width="1280" height="720">
+            {# Says when the picture up isn't yet the one the slider points at (cards/history.js) #}
+            <p class="frame-state" id="frame-state" hidden></p>
             {# Earlier pictures on a 24h bar (cards/history.js); filled only on an unlocked device #}
             <div class="history" id="history" hidden>
                 <div class="history-days" id="history-days" role="group" aria-label="Day"></div>

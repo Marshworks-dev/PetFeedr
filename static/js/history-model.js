@@ -218,6 +218,40 @@ export function settle(fn, ms = SETTLE_MS, timers = globalThis) {
     return call;
 }
 
+// Which picture the dialog is waiting for. A drag asks for several in a
+// row; only the newest one's load ends the wait, so a slow earlier frame
+// landing late never makes the picture look current. States: 'shown',
+// 'loading', 'failed'
+export function frameLoader() {
+    let wanted = null;
+    let state = 'shown';
+    return {
+        // A new picture is wanted (the slider moved, or a jump)
+        want(src) {
+            wanted = src;
+            state = 'loading';
+        },
+        // The browser finished a picture; true when it ended the wait
+        loaded(src) {
+            if (src !== wanted || state !== 'loading') return false;
+            state = 'shown';
+            return true;
+        },
+        failed(src) {
+            if (src !== wanted) return false;
+            state = 'failed';
+            return true;
+        },
+        // Back to whatever is up (dialog reopened on the live picture)
+        reset() {
+            wanted = null;
+            state = 'shown';
+        },
+        get state() { return state; },
+        get wanted() { return wanted; },
+    };
+}
+
 // The last `count` days as { date: 'YYYY-MM-DD', label }, today first, in local time
 export function recentDays(now = new Date(), count = 7) {
     const days = [];

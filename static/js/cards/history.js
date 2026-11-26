@@ -16,7 +16,7 @@ import { openClip } from './clips.js';
 import {
     DAY_MINUTES, STEP_MINUTES, frameMinutes, tsMinutes, nearestFrame, feedMarks,
     blindStretches, valueText, settle, recentDays, clock, pct, nearestFeed, feedName,
-    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions,
+    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions, frameLoader,
 } from '../history-model.js';
 
 const BLIND_WORDS = { dark: 'dark', blocked: 'lens covered', offline: 'no picture' };
@@ -30,14 +30,47 @@ let browsing = false;   // true once the slider, a chip or a jump moved off "now
 let request = 0;        // the newest day fetch; older answers are dropped
 let feed = null;        // the feed mark the panel shows
 
-const showFrame = settle(name => {
-    if (!view || !browsing || !$('#bowl-full').open) return;
-    showSrc(`/camera/frame/${encodeURIComponent(name)}`);
-});
+// Which picture is on its way: the old one stays up, dimmed and labelled,
+// until the one the slider points at has arrived
+const loader = frameLoader();
+let loadingLabel = '';
 
-function showSrc(src) {
+const frameSrc = name => `/camera/frame/${encodeURIComponent(name)}`;
+
+function renderLoad() {
+    const state = loader.state;
+    $('#bowl-full-frame').classList.toggle('is-loading', state === 'loading');
+    const badge = $('#frame-state');
+    badge.hidden = state === 'shown';
+    badge.textContent = state === 'failed' ? `Couldn't load ${loadingLabel}` : `Loading ${loadingLabel}…`;
+}
+
+// Mark a picture as wanted now (before the drag settles), labelled for the badge
+function want(src, label) {
+    if (src === loader.wanted && loader.state !== 'failed') return;
+    loadingLabel = label;
+    loader.want(src);
+    // Already up (a drag that came back to where it started): nothing to wait for
+    const img = $('#bowl-full-frame');
+    if (img.getAttribute('src') === src && img.complete && img.naturalWidth) loader.loaded(src);
+    renderLoad();
+}
+
+// Put the wanted picture in the img; its load event ends the wait
+function setImg(src) {
     const img = $('#bowl-full-frame');
     if (img.getAttribute('src') !== src) img.src = src;
+}
+
+const showFrame = settle(src => {
+    if (!view || !browsing || !$('#bowl-full').open) return;
+    setImg(src);
+});
+
+function showSrc(src, label) {
+    showFrame.cancel();
+    want(src, label);
+    setImg(src);
 }
 
 // The dialog is showing an earlier picture: camera.js stops swapping in new ones
@@ -131,7 +164,8 @@ function pick() {
     if (!browsing) return;
     headline(`${view.label} ${clock(at)}`, text);
     status(text);
-    showFrame(name);
+    want(frameSrc(name), clock(at));
+    showFrame(frameSrc(name));
 }
 
 // Set the slider to a time without a drag, then show that frame
@@ -151,11 +185,10 @@ function jumpBefore(mark) {
     }
     // A frame from the feed's clip, seconds before the food landed
     moveTo(mark.minutes);
-    showFrame.cancel();
     const text = `just before the ${feedName(mark)}, from its clip`;
     headline(`${view.label} ${clock(mark.minutes)}`, `${view.label}, ${text}`);
     status(`${view.label}, ${text}`);
-    showSrc(`/camera/clips/${encodeURIComponent(target.clip)}/${target.index}.jpg`);
+    showSrc(`/camera/clips/${encodeURIComponent(target.clip)}/${target.index}.jpg`, `the picture before the ${feedName(mark)}`);
 }
 
 function jumpAfter(mark) {
@@ -167,12 +200,11 @@ function jumpAfter(mark) {
     }
     // A late meal's 30-min picture is the next day's: shown, the bar stays put
     moveTo(mark.minutes);
-    showFrame.cancel();
     const at = clock(frameMinutes(target.frame));
     const text = `${at} the next day, 30 min after the ${feedName(mark)}`;
     headline(`${at}, next day`, text);
     status(text);
-    showSrc(`/camera/frame/${encodeURIComponent(target.frame)}`);
+    showSrc(frameSrc(target.frame), `${at} the next day`);
 }
 
 function watch(mark) {
@@ -236,6 +268,8 @@ function setup(jump = null) {
     if (locked) {
         request++;           // drop any answer still on its way
         showFrame.cancel();
+        loader.reset();
+        renderLoad();
         view = null;
         return;
     }
@@ -268,6 +302,8 @@ export function openHistory(jump = null) {
     setHTML($('#history-marks'), html``);
     $('#history-feed').hidden = true;
     delete $('#history-feed').dataset.key;
+    loader.reset();
+    renderLoad();
     setup(jump);
 }
 
@@ -307,9 +343,14 @@ export function initHistory() {
     $('#history-unlock').addEventListener('click', () => {
         requestUnlock().then(unlocked => { if (unlocked) setup(); });
     });
+    const img = $('#bowl-full-frame');
+    img.addEventListener('load', () => { if (loader.loaded(img.getAttribute('src'))) renderLoad(); });
+    img.addEventListener('error', () => { if (loader.failed(img.getAttribute('src'))) renderLoad(); });
     $('#bowl-full').addEventListener('close', () => {
         request++;
         showFrame.cancel();
+        loader.reset();
+        renderLoad();
         browsing = false;
         view = null;
         feed = null;

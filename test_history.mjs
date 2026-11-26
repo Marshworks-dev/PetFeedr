@@ -202,3 +202,25 @@ test('each feed offers the right buttons; a feed with no clip says so', () => {
     // A missed feed dropped nothing: no buttons, and no "no clip" line
     assert.deepEqual(feedActions(missed, frames), { before: null, watch: false, after: null, noClip: false });
 });
+
+import { frameLoader } from './static/js/history-model.js';
+
+test('the picture reads as loading until the newest one asked for arrives', () => {
+    const loader = frameLoader();
+    assert.equal(loader.state, 'shown');
+    // A drag asks for A, then B
+    loader.want('/a.jpg');
+    loader.want('/b.jpg');
+    // A arrives late: still waiting for B
+    assert.equal(loader.loaded('/a.jpg'), false);
+    assert.equal(loader.state, 'loading');
+    assert.equal(loader.loaded('/b.jpg'), true);
+    assert.equal(loader.state, 'shown');
+    // A stale failure doesn't mark the current picture as failed
+    loader.want('/c.jpg');
+    assert.equal(loader.failed('/b.jpg'), false);
+    assert.equal(loader.failed('/c.jpg'), true);
+    assert.equal(loader.state, 'failed');
+    loader.reset();
+    assert.equal(loader.state, 'shown');
+});
