@@ -232,6 +232,8 @@ class Watch:
         # must never hold up the camera's clip thread, whose buffer is a minute
         self._background = background
         self._lock = threading.Lock()
+        # The readings file: an append landing mid-prune would be lost
+        self._file_lock = threading.Lock()
         self._blind_since = None     # epoch of the first bad frame in a row
         self._blind_alerted = False
         self._waiting = []           # (landed epoch, clip id) awaiting the 30-min look
@@ -358,7 +360,7 @@ class Watch:
         line = {'ts': datetime.fromtimestamp(at).isoformat(timespec='seconds'), **fields}
         try:
             os.makedirs(os.path.dirname(READINGS_FILE), exist_ok=True)
-            with open(READINGS_FILE, 'a') as f:
+            with self._file_lock, open(READINGS_FILE, 'a') as f:
                 f.write(json.dumps(line) + '\n')
         except OSError as e:
             log.warning(f"Bowl reading not saved: {e}")
@@ -369,20 +371,21 @@ class Watch:
             return
         self._pruned_on = today
         cutoff = (datetime.fromtimestamp(now) - timedelta(days=KEEP_DAYS)).isoformat(timespec='seconds')
-        try:
-            with open(READINGS_FILE) as f:
-                lines = f.readlines()
-        except FileNotFoundError:
-            return
-        kept = []
-        for line in lines:
+        with self._file_lock:
             try:
-                if json.loads(line)['ts'] >= cutoff:
-                    kept.append(line)
-            except (ValueError, KeyError, TypeError):
-                continue
-        if len(kept) != len(lines):
-            write_atomic(READINGS_FILE, ''.join(kept))
+                with open(READINGS_FILE) as f:
+                    lines = f.readlines()
+            except FileNotFoundError:
+                return
+            kept = []
+            for line in lines:
+                try:
+                    if json.loads(line)['ts'] >= cutoff:
+                        kept.append(line)
+                except (ValueError, KeyError, TypeError):
+                    continue
+            if len(kept) != len(lines):
+                write_atomic(READINGS_FILE, ''.join(kept))
 
 
 WATCH = Watch()

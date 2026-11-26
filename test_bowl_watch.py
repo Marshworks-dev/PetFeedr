@@ -312,6 +312,34 @@ class TestMealReadings(WatchCase):
         self.assertEqual([r['frame'] for r in self.readings()], ['2026-11-27T153001.jpg'])
 
 
+class TestPruneKeepsNewReadings(WatchCase):
+    def test_a_reading_written_during_a_prune_survives_it(self):
+        import threading
+        self.watch.frame_saved('old.jpg', b'empty', self.T0 - 15 * 86400)
+        self.watch._pruned_on = None
+        in_prune, go_on = threading.Event(), threading.Event()
+        real = bw.write_atomic
+
+        def slow_write(path, text):
+            in_prune.set()
+            go_on.wait(5)
+            real(path, text)
+
+        with patch.object(bw, 'write_atomic', slow_write):
+            pruner = threading.Thread(target=self.watch._prune, args=(self.T0,))
+            pruner.start()
+            try:
+                self.assertTrue(in_prune.wait(5))
+                writer = threading.Thread(target=self.watch._record,
+                                          args=({'kind': 'frame', 'frame': 'new.jpg'}, self.T0))
+                writer.start()
+            finally:
+                go_on.set()
+            pruner.join(5)
+            writer.join(5)
+        self.assertEqual([r['frame'] for r in self.readings()], ['new.jpg'])
+
+
 class TestNeverRaises(WatchCase):
     def test_a_bug_in_reading_is_logged_not_raised(self):
         watch = bw.Watch(read=MagicMock(side_effect=RuntimeError('boom')), send=MagicMock(),
