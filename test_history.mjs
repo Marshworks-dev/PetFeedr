@@ -181,3 +181,24 @@ test('the nearest feed to a slider position, and the Last 7 Days times', () => {
     assert.equal(parseClock('12:00 PM'), 720);
     assert.equal(parseClock('nonsense'), null);
 });
+
+import { feedActions } from './static/js/history-model.js';
+
+test('each feed offers the right buttons; a feed with no clip says so', () => {
+    const frames = [F('1725'), F('1800')];
+    const withClip = feedActions(meal({ bowl: 'empty', picture: { clip: '2026-11-26T173000', index: 3 } }, null), frames);
+    assert.deepEqual(withClip, { before: { clip: '2026-11-26T173000', index: 3 }, watch: true,
+        after: { frame: F('1800') }, noClip: false });
+    const noClip = feedActions(meal(null, null, { clip: null }), frames);
+    assert.equal(noClip.watch, false);
+    assert.equal(noClip.noClip, true);
+    const [pulse, bare, missed] = feedMarks([
+        { ts: '2026-11-26T12:00:00', event: 'graze_pulse', clip: { id: '2026-11-26T120000', frames: 80, landed: 20 } },
+        { ts: '2026-11-26T12:10:00', event: 'graze_pulse', clip: null },
+        { ts: '2026-11-26T13:00:00', event: 'missed' }]);
+    // A graze pulse: Watch only, never Before or 30 min after
+    assert.deepEqual(feedActions(pulse, frames), { before: null, watch: true, after: null, noClip: false });
+    assert.deepEqual(feedActions(bare, frames), { before: null, watch: false, after: null, noClip: true });
+    // A missed feed dropped nothing: no buttons, and no "no clip" line
+    assert.deepEqual(feedActions(missed, frames), { before: null, watch: false, after: null, noClip: false });
+});

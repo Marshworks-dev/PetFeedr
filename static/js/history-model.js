@@ -181,6 +181,18 @@ export function afterTarget(mark, frames) {
     return found ? { frame: found } : null;
 }
 
+// What the panel offers for a feed: meals get Before and 30 min after when
+// there's a picture to jump to; any feed with a clip gets Watch; a feed that
+// should have a clip and has none says so; missed and failed feeds get nothing
+export function feedActions(mark, frames) {
+    const meal = isMeal(mark);
+    const before = meal ? beforeTarget(mark, frames) : null;
+    const after = meal ? afterTarget(mark, frames) : null;
+    const watch = Boolean(mark.feed.clip);
+    const dispensed = mark.kind !== 'missed' && mark.kind !== 'failed';
+    return { before, watch, after, noClip: dispensed && !watch };
+}
+
 // "5:30 PM" (the Last 7 Days list) to minutes into the day, or null
 export function parseClock(text) {
     const m = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(text || '');

@@ -67,8 +67,7 @@ Dashboard
       before the 5:30 feed, camera read empty"); Before, Watch and 30 min
       after say which feed.
 - [test] At least one unhappy-path test per new route. All tests pass.
-- [check] Light and dark, 320–390 px, on the phone (not yet run at ship:
-      checked in a 320/390 px browser and on the tailnet test server)
+- [check] Light and dark, 320–390 px, on the phone (OWED).
 
 ## Out of scope
 

@@ -16,7 +16,7 @@ import { openClip } from './clips.js';
 import {
     DAY_MINUTES, STEP_MINUTES, frameMinutes, tsMinutes, nearestFrame, feedMarks,
     blindStretches, valueText, settle, recentDays, clock, pct, nearestFeed, feedName,
-    isMeal, readingWords, mealFlag, beforeTarget, afterTarget,
+    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions,
 } from '../history-model.js';
 
 const BLIND_WORDS = { dark: 'dark', blocked: 'lens covered', offline: 'no picture' };
@@ -98,22 +98,18 @@ function renderFeed() {
     $('#history-next').disabled = index >= view.marks.length - 1;
     const since = isToday() ? nowMinute() - near.minutes : Infinity;
     const words = readingWords(near, since);
-    const meal = isMeal(near);
-    const before = meal && beforeTarget(near, view.frames);
-    const after = meal && afterTarget(near, view.frames);
-    const clip = near.feed.clip;
+    const { before, watch: clip, after, noClip } = feedActions(near, view.frames);
     const name = feedName(near);
     // Rebuilt only when what it shows changed, so focus stays on a button pressed
-    const key = JSON.stringify([view.date, near.feed.ts, words, Boolean(before), Boolean(after), clip?.id]);
+    const key = JSON.stringify([view.date, near.feed.ts, words, Boolean(before), Boolean(after), clip, noClip]);
     if (panel.dataset.key === key) return;
     panel.dataset.key = key;
     setHTML($('#history-feed-text'), html`<strong>${name}</strong>${words ? html` · ${words}` : ''}`);
-    const watchable = near.kind !== 'missed' && near.kind !== 'failed';
     setHTML($('#history-feed-actions'), html`
         ${before ? html`<button type="button" class="history-act" data-act="before" aria-label="Before the ${name}">Before</button>` : ''}
         ${clip ? html`<button type="button" class="history-act" data-act="watch" aria-label="Watch the ${name}">▶ Watch</button>` : ''}
         ${after ? html`<button type="button" class="history-act" data-act="after" aria-label="30 minutes after the ${name}">30 min after</button>` : ''}
-        ${watchable && !clip ? html`<span class="history-note">No clip of this one</span>` : ''}`);
+        ${noClip ? html`<span class="history-note">No clip of this one</span>` : ''}`);
 }
 
 // Move the picture and every label to the frame nearest the slider
