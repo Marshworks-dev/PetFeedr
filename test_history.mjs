@@ -202,3 +202,51 @@ test('each feed offers the right buttons; a feed with no clip says so', () => {
     // A missed feed dropped nothing: no buttons, and no "no clip" line
     assert.deepEqual(feedActions(missed, frames), { before: null, watch: false, after: null, noClip: false });
 });
+
+import { frameLoader } from './static/js/history-model.js';
+
+test('the picture reads as loading until the newest one asked for arrives', () => {
+    const loader = frameLoader();
+    assert.equal(loader.state, 'shown');
+    // A drag asks for A, then B
+    loader.want('/a.jpg');
+    loader.want('/b.jpg');
+    // A arrives late: still waiting for B
+    assert.equal(loader.loaded('/a.jpg'), false);
+    assert.equal(loader.state, 'loading');
+    assert.equal(loader.loaded('/b.jpg'), true);
+    assert.equal(loader.state, 'shown');
+    // A stale failure doesn't mark the current picture as failed
+    loader.want('/c.jpg');
+    assert.equal(loader.failed('/b.jpg'), false);
+    assert.equal(loader.failed('/c.jpg'), true);
+    assert.equal(loader.state, 'failed');
+    loader.reset();
+    assert.equal(loader.state, 'shown');
+});
+
+import { imgStep } from './static/js/history-model.js';
+
+test('a picture that failed is fetched again, not left "loading" forever', () => {
+    assert.equal(imgStep('/a.jpg', '/b.jpg', true, 1280), 'set');
+    assert.equal(imgStep('/a.jpg', '/a.jpg', true, 1280), 'none');    // already up
+    assert.equal(imgStep('/a.jpg', '/a.jpg', false, 0), 'none');      // still on its way
+    assert.equal(imgStep('/a.jpg', '/a.jpg', true, 0), 'retry');      // failed: same src again
+    assert.equal(imgStep(null, '/a.jpg', false, 0), 'set');
+});
+
+import { stepFeed } from './static/js/history-model.js';
+
+test('‹ › step between feeds, or to the nearest one either side when none is near', () => {
+    const marks = feedMarks([
+        { ts: '2026-11-26T06:30:00', event: 'dispense', source: 'scheduled' },
+        { ts: '2026-11-26T12:00:00', event: 'dispense', source: 'scheduled' },
+        { ts: '2026-11-26T17:30:00', event: 'dispense', source: 'scheduled' }]);
+    assert.equal(stepFeed(marks, 720, marks[1], -1), marks[0]);
+    assert.equal(stepFeed(marks, 720, marks[1], 1), marks[2]);
+    assert.equal(stepFeed(marks, 390, marks[0], -1), null);
+    // 3 PM, nothing within an hour: back to noon, on to 5:30
+    assert.equal(stepFeed(marks, 900, null, -1), marks[1]);
+    assert.equal(stepFeed(marks, 900, null, 1), marks[2]);
+    assert.equal(stepFeed([], 900, null, 1), null);
+});

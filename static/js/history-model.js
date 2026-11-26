@@ -181,6 +181,15 @@ export function afterTarget(mark, frames) {
     return found ? { frame: found } : null;
 }
 
+// The feed ‹ or › goes to: the one before or after the panel's feed, or,
+// with no feed near, the nearest one on that side of the slider. dir -1 | 1
+export function stepFeed(marks, minute, current, dir) {
+    const list = marks || [];
+    if (current) return list[list.indexOf(current) + dir] || null;
+    if (dir < 0) return [...list].reverse().find(m => m.minutes < minute) || null;
+    return list.find(m => m.minutes > minute) || null;
+}
+
 // What the panel offers for a feed: meals get Before and 30 min after when
 // there's a picture to jump to; any feed with a clip gets Watch; a feed that
 // should have a clip and has none says so; missed and failed feeds get nothing
@@ -216,6 +225,49 @@ export function settle(fn, ms = SETTLE_MS, timers = globalThis) {
         timer = null;
     };
     return call;
+}
+
+// Which picture the dialog is waiting for. A drag asks for several in a
+// row; only the newest one's load ends the wait, so a slow earlier frame
+// landing late never makes the picture look current. States: 'shown',
+// 'loading', 'failed'
+export function frameLoader() {
+    let wanted = null;
+    let state = 'shown';
+    return {
+        // A new picture is wanted (the slider moved, or a jump)
+        want(src) {
+            wanted = src;
+            state = 'loading';
+        },
+        // The browser finished a picture; true when it ended the wait
+        loaded(src) {
+            if (src !== wanted || state !== 'loading') return false;
+            state = 'shown';
+            return true;
+        },
+        failed(src) {
+            if (src !== wanted) return false;
+            state = 'failed';
+            return true;
+        },
+        // Back to whatever is up (dialog reopened on the live picture)
+        reset() {
+            wanted = null;
+            state = 'shown';
+        },
+        get state() { return state; },
+        get wanted() { return wanted; },
+    };
+}
+
+// What to do with the <img> to get `src` up: 'none' when it's already
+// there or on its way, 'set' for a new address, 'retry' when the same
+// address already failed (re-setting an identical src loads nothing, so
+// the wait would never end)
+export function imgStep(current, src, complete, naturalWidth) {
+    if (current !== src) return 'set';
+    return complete && !naturalWidth ? 'retry' : 'none';
 }
 
 // The last `count` days as { date: 'YYYY-MM-DD', label }, today first, in local time

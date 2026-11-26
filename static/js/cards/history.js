@@ -16,7 +16,7 @@ import { openClip } from './clips.js';
 import {
     DAY_MINUTES, STEP_MINUTES, frameMinutes, tsMinutes, nearestFrame, feedMarks,
     blindStretches, valueText, settle, recentDays, clock, pct, nearestFeed, feedName,
-    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions,
+    isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions, frameLoader, imgStep, stepFeed,
 } from '../history-model.js';
 
 const BLIND_WORDS = { dark: 'dark', blocked: 'lens covered', offline: 'no picture' };
@@ -30,14 +30,49 @@ let browsing = false;   // true once the slider, a chip or a jump moved off "now
 let request = 0;        // the newest day fetch; older answers are dropped
 let feed = null;        // the feed mark the panel shows
 
-const showFrame = settle(name => {
+// Which picture is on its way: the old one stays up, dimmed and labelled,
+// until the one the slider points at has arrived
+const loader = frameLoader();
+let loadingLabel = '';
+
+const frameSrc = name => `/camera/frame/${encodeURIComponent(name)}`;
+
+function renderLoad() {
+    const state = loader.state;
+    $('#bowl-full-frame').classList.toggle('is-loading', state === 'loading');
+    const badge = $('#frame-state');
+    badge.hidden = state === 'shown';
+    badge.textContent = state === 'failed' ? `Couldn't load ${loadingLabel}` : `Loading ${loadingLabel}…`;
+}
+
+// Mark a picture as wanted now (before the drag settles), labelled for the badge
+function want(src, label) {
+    if (src === loader.wanted && loader.state !== 'failed') return;
+    loadingLabel = label;
+    loader.want(src);
+    // Already up (a drag that came back to where it started): nothing to wait for
+    const img = $('#bowl-full-frame');
+    if (img.getAttribute('src') === src && img.complete && img.naturalWidth) loader.loaded(src);
+    renderLoad();
+}
+
+// Put the wanted picture in the img; its load event ends the wait
+function setImg(src) {
+    const img = $('#bowl-full-frame');
+    const step = imgStep(img.getAttribute('src'), src, img.complete, img.naturalWidth);
+    if (step === 'retry') img.removeAttribute('src');
+    if (step !== 'none') img.src = src;
+}
+
+const showFrame = settle(src => {
     if (!view || !browsing || !$('#bowl-full').open) return;
-    showSrc(`/camera/frame/${encodeURIComponent(name)}`);
+    setImg(src);
 });
 
-function showSrc(src) {
-    const img = $('#bowl-full-frame');
-    if (img.getAttribute('src') !== src) img.src = src;
+function showSrc(src, label) {
+    showFrame.cancel();
+    want(src, label);
+    setImg(src);
 }
 
 // The dialog is showing an earlier picture: camera.js stops swapping in new ones
@@ -86,16 +121,24 @@ function renderMarks() {
         })}`);
 }
 
-// The panel for the feed nearest the slider: its name, readings and jumps
+// The panel for the feed nearest the slider: its name, readings and jumps.
+// Always the same height, near a feed or not, so dragging never resizes the
+// dialog and moves the picture
 function renderFeed() {
     const panel = $('#history-feed');
     const near = view ? nearestFeed(view.marks, minute) : null;
     feed = near;
-    panel.hidden = !near;
-    if (!near) return;
-    const index = view.marks.indexOf(near);
-    $('#history-prev').disabled = index <= 0;
-    $('#history-next').disabled = index >= view.marks.length - 1;
+    const marks = view ? view.marks : [];
+    $('#history-prev').disabled = !stepFeed(marks, minute, near, -1);
+    $('#history-next').disabled = !stepFeed(marks, minute, near, 1);
+    if (!near) {
+        const key = JSON.stringify(['none', marks.length > 0]);
+        if (panel.dataset.key === key) return;
+        panel.dataset.key = key;
+        setHTML($('#history-feed-text'), html`<span class="history-note">${marks.length ? 'No feed within an hour' : 'No feeds this day'}</span>`);
+        setHTML($('#history-feed-actions'), html``);
+        return;
+    }
     const since = isToday() ? nowMinute() - near.minutes : Infinity;
     const words = readingWords(near, since);
     const { before, watch: clip, after, noClip } = feedActions(near, view.frames);
@@ -109,7 +152,7 @@ function renderFeed() {
         ${before ? html`<button type="button" class="history-act" data-act="before" aria-label="Before the ${name}">Before</button>` : ''}
         ${clip ? html`<button type="button" class="history-act" data-act="watch" aria-label="Watch the ${name}">▶ Watch</button>` : ''}
         ${after ? html`<button type="button" class="history-act" data-act="after" aria-label="30 minutes after the ${name}">30 min after</button>` : ''}
-        ${noClip ? html`<span class="history-note">No clip of this one</span>` : ''}`);
+        ${noClip ? html`<span class="history-note">No clip</span>` : ''}`);
 }
 
 // Move the picture and every label to the frame nearest the slider
@@ -130,8 +173,10 @@ function pick() {
     renderFeed();
     if (!browsing) return;
     headline(`${view.label} ${clock(at)}`, text);
-    status(text);
-    showFrame(name);
+    // The slider's own text value carries the full sentence for screen readers
+    status('');
+    want(frameSrc(name), clock(at));
+    showFrame(frameSrc(name));
 }
 
 // Set the slider to a time without a drag, then show that frame
@@ -151,11 +196,10 @@ function jumpBefore(mark) {
     }
     // A frame from the feed's clip, seconds before the food landed
     moveTo(mark.minutes);
-    showFrame.cancel();
     const text = `just before the ${feedName(mark)}, from its clip`;
     headline(`${view.label} ${clock(mark.minutes)}`, `${view.label}, ${text}`);
-    status(`${view.label}, ${text}`);
-    showSrc(`/camera/clips/${encodeURIComponent(target.clip)}/${target.index}.jpg`);
+    status(`Just before the ${feedName(mark)}, from its clip`);
+    showSrc(`/camera/clips/${encodeURIComponent(target.clip)}/${target.index}.jpg`, `the picture before the ${feedName(mark)}`);
 }
 
 function jumpAfter(mark) {
@@ -167,12 +211,11 @@ function jumpAfter(mark) {
     }
     // A late meal's 30-min picture is the next day's: shown, the bar stays put
     moveTo(mark.minutes);
-    showFrame.cancel();
     const at = clock(frameMinutes(target.frame));
     const text = `${at} the next day, 30 min after the ${feedName(mark)}`;
     headline(`${at}, next day`, text);
-    status(text);
-    showSrc(`/camera/frame/${encodeURIComponent(target.frame)}`);
+    status(`30 min after the ${feedName(mark)}, from the next day`);
+    showSrc(frameSrc(target.frame), `${at} the next day`);
 }
 
 function watch(mark) {
@@ -221,8 +264,7 @@ async function load(date, { keepTime = true, then = null } = {}) {
         minute = Math.round(frameMinutes(view.frames[view.frames.length - 1]) / STEP_MINUTES) * STEP_MINUTES;
     }
     $('#history-scrub').value = minute;
-    if (!view.frames.length) status('No pictures saved this day');
-    else if (!browsing) status('');
+    status(view.frames.length ? '' : 'No pictures saved this day');
     pick();
     if (then) then();
 }
@@ -236,6 +278,8 @@ function setup(jump = null) {
     if (locked) {
         request++;           // drop any answer still on its way
         showFrame.cancel();
+        loader.reset();
+        renderLoad();
         view = null;
         return;
     }
@@ -266,8 +310,9 @@ export function openHistory(jump = null) {
     minute = DAY_MINUTES - STEP_MINUTES;
     status('');
     setHTML($('#history-marks'), html``);
-    $('#history-feed').hidden = true;
     delete $('#history-feed').dataset.key;
+    loader.reset();
+    renderLoad();
     setup(jump);
 }
 
@@ -297,19 +342,24 @@ export function initHistory() {
         else if (act === 'after') jumpAfter(feed);
         else if (act === 'watch') watch(feed);
     });
-    for (const [id, step] of [['#history-prev', -1], ['#history-next', 1]]) {
+    for (const [id, dir] of [['#history-prev', -1], ['#history-next', 1]]) {
         $(id).addEventListener('click', () => {
-            if (!feed || !view) return;
-            const next = view.marks[view.marks.indexOf(feed) + step];
+            if (!view) return;
+            const next = stepFeed(view.marks, minute, feed, dir);
             if (next) moveTo(next.minutes);
         });
     }
     $('#history-unlock').addEventListener('click', () => {
         requestUnlock().then(unlocked => { if (unlocked) setup(); });
     });
+    const img = $('#bowl-full-frame');
+    img.addEventListener('load', () => { if (loader.loaded(img.getAttribute('src'))) renderLoad(); });
+    img.addEventListener('error', () => { if (loader.failed(img.getAttribute('src'))) renderLoad(); });
     $('#bowl-full').addEventListener('close', () => {
         request++;
         showFrame.cancel();
+        loader.reset();
+        renderLoad();
         browsing = false;
         view = null;
         feed = null;

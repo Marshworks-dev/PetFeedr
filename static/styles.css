@@ -2639,6 +2639,27 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 
 .history { padding: 0.25rem 0.9rem 0.75rem; }
 
+/* While the picture the slider points at is on its way, the old one dims
+   and a label over it says which one is coming */
+.bowl-full img.is-loading { opacity: 0.4; }
+
+@media (prefers-reduced-motion: no-preference) {
+    .bowl-full img { transition: opacity 0.12s; }
+}
+
+.frame-state {
+    position: absolute;
+    top: 60px;
+    left: 12px;
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.75);
+    color: #fff;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    pointer-events: none;
+}
+
 .history-days {
     display: flex;
     gap: 0.3rem;
@@ -2813,6 +2834,9 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 }
 
 /* The feed nearest the slider */
+/* Fixed heights all the way down: two lines of feed text, one row of
+   buttons, one status line. Content that comes and goes as the slider moves
+   must never resize the dialog, or the picture jumps mid-drag */
 .history-feed { margin-top: 0.4rem; }
 
 .history-feed-head {
@@ -2824,6 +2848,12 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 .history-feed-text {
     flex: 1;
     min-width: 0;
+    height: 2.8em;          /* two lines at line-height 1.4 */
+    line-height: 1.4;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
     font-size: var(--fs-sm);
     text-align: center;
 }
@@ -2844,7 +2874,8 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 
 .history-feed-actions {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    height: 44px;
     justify-content: center;
     align-items: center;
     gap: 0.4rem;
@@ -2871,8 +2902,12 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 }
 
 .history-status {
-    min-height: 1.4em;
+    height: 1.4em;
+    line-height: 1.4;
     margin-top: 0.3rem;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
     font-size: var(--fs-sm);
 }
 
