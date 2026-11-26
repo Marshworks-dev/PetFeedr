@@ -1,46 +1,74 @@
-# Feed clips: see the bowl before and after every dispense
+# Bowl watch: alerts when the camera is blind or a meal goes uneaten
 
-Status: shipped
+Status: approved
 
-Intent: The bowl picture answers "did food come out?" without guesswork.
-The camera keeps the last few seconds of its stream in memory. When a
-dispense or graze pulse lands it saves a short clip: 10 s before to 30 s
-after, at 2 frames a second. Manual and Porch feeds get clips too; the
-journal records them as dispenses like any other. Tapping that feed on the timeline plays the
-clip as a flipbook. The top panel shows a frame seconds old instead of up
-to 5 minutes old. The feed path never knows the camera exists: the camera
-watches feeding_events.jsonl, the same journal the feeds already write.
+Intent: The camera tells you, by Pushover, the two things it can actually
+see: that it can't see (dark, blocked or offline), and that a meal wasn't
+eaten. It doesn't try to catch food landing; the cats get there first.
+A review of 47 feed clips found the bowl empty before all 36 visible
+feeds, a cat usually at the bowl within 1 s of the food landing, and one
+stretch of 2.5 days when the lens was blocked and nothing said so.
 
 ## Done when
 
-- [test] camera.py still never imports feeder_core or takes STATE_LOCK, and
-      no feed module imports camera (the existing test still passes).
-- [test] A dispense or graze_pulse event in the journal gives one clip in
-      data/clips/, named by the event's ts, with frames from about 10 s
-      before to 30 s after. Events from before the camera started give none.
-- [test] A clip is never cut short by the next event: two pulses close
-      together each get their own clip.
-- [test] With the webcam unplugged or jammed, feeding and the journal are
-      untouched; no clip is made, and the log notes it once.
-- [test] Clips older than 14 days are pruned, like frames.
-- [test] The clip route takes an event ts, accepts only that exact format,
-      and serves only files under data/clips/ (no path from the request
-      reaches the filesystem). It sits behind the same Host check as
-      /camera/latest.jpg.
-- [test] The top panel's picture is the stream's newest frame from memory
-      (seconds old), refreshed on each poll. The 5-minute saved frames are
-      unchanged.
-- [check] A screen left open and untouched for 10 minutes stops fetching
-      new pictures and says so on the picture; the next tap brings it back.
-- [check] On the phone: tap a past feed on the timeline, the clip plays,
-      and food can be seen landing. Feeds with no clip say so plainly.
-- [check] The flipbook has a pause control, and with reduced motion it
-      opens paused on the "after" frame.
+### Camera can't see
+- [test] A saved frame is read as `clear`, `dark` (mostly black) or
+      `blocked` (most of the picture covered, the bowl not found).
+- [test] One hour of `dark` or `blocked` frames in a row sends one
+      Pushover. It doesn't repeat while the camera stays blind; one
+      "camera can see the bowl again" follows when a clear frame comes back.
+- [test] One hour with no frame saved at all (stream dead or stalled)
+      sends the same alert, worded for that cause. Today it only logs.
+- [test] A single dark or blocked frame (a cat walking past the lens)
+      sends nothing.
+
+### Meals
+- [test] For each feed, the bowl is read twice. **Before:** from the clip's
+      frames before the food lands: `empty`, `food` or `unknown`. **30 min
+      after:** from the first clear 5-minute frame between 30 and 60 min
+      after the feed: `empty`, `food` or `unknown`.
+- [test] The bowl is found in each frame and not assumed to be in a fixed
+      spot (it gets nudged; a fixed crop failed in the study). Bowl not
+      found, a cat over it, or a dark frame all read as `unknown`.
+- [test] `food` at 30 min after a feed sends one Pushover ("the 15:30 meal
+      hasn't been eaten"). `food` before a feed sends one ("food left from
+      the last meal"), unless the 30-min alert already covered that food.
+- [test] `unknown` never sends a meal alert. A blind camera is the camera
+      alert's job.
+- [test] The readings go to their own file (`data/bowl_readings.jsonl`,
+      14 days), one line per reading with the frame it came from. That way
+      any alert can be checked against the picture.
+- [test] The readings get synthetic frames right, drawn in the test code:
+      empty, food, a cat's head over the bowl, dark, blocked, bowl moved.
+      No camera pictures are committed to this repo.
+- [check] The same readings get real frames right, run locally against
+      crops kept outside the repo (`PETFEEDR_REAL_FRAMES`, a private
+      folder); the test is skipped when that folder is absent.
+
+### Ships quiet first
+- [test] Meal alerts have an off switch. They ship off and write readings
+      only. The camera alerts ship on.
+- [check] After a week of readings, compare every reading against its frame
+      and report the misreads. Meal alerts get switched on only if you
+      approve that report.
+
+### Unchanged
+- [test] camera.py and anything new still never import feeder_core or
+      take STATE_LOCK, and no feed module imports them (existing test).
+      Readings come from saved frames and the journal, never from a call
+      on the feed path.
+- [test] No new Python dependency: frames are decoded by the ffmpeg
+      already on the Pi into a small greyscale thumbnail, and plain Python
+      does the arithmetic. The webcam stream itself is untouched (no
+      second stream).
 - [test] All tests pass.
 
 ## Out of scope
 
-- Live video (decided against: about 1.2 GB an hour per open screen).
-- Encoding to MP4/H.264; clips are plain JPEG frames.
-- Detecting food or cats in the picture.
-- Small graze accuracy (its own hands-on check in OWED).
+- Seeing food land, or measuring portion size (that's the bowl scale's job).
+- Telling the two cats apart.
+- Showing readings on the dashboard.
+- Graze mode, and any change to feeding.
+- Changing capture rate or clip length.
+- Sending pictures anywhere, or LLM/vision-model reading.
+- Committing camera frames, clips or readings to this repo.
