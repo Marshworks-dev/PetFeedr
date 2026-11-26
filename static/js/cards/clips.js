@@ -5,6 +5,8 @@
 // a clip is opened.
 
 import { $, $$, html, setHTML, reducedMotion } from '../dom.js';
+import { getState } from '../store.js';
+import { requestUnlock } from './lock.js';
 
 // Frames are 0.5 s apart; shown at twice that rate, a 40 s clip plays in 20 s
 const FRAME_MS = 250;
@@ -31,17 +33,29 @@ function renderRow() {
         setHTML(row, html``);
         return;
     }
+    // Clips need the unlock once a passcode is set (lock_routes.py)
+    const locked = isLocked();
     // Rebuilt only when what it shows changed, so a poll doesn't steal focus
-    const key = JSON.stringify([clips.map(c => c.id), note]);
+    const key = JSON.stringify([clips.map(c => c.id), note, locked]);
     if (row.dataset.key === key) return;
     row.dataset.key = key;
     setHTML(row, html`${clips.map(c => html`
-        <button type="button" class="clip-watch" data-clip="${c.id}">▶ Watch ${c.title}</button>`)}
+        <button type="button" class="clip-watch" data-clip="${c.id}">${locked ? 'Unlock to watch' : '▶ Watch'} ${c.title}</button>`)}
         ${note ? html`<span class="clip-note">${note}</span>` : ''}`);
 }
 
+const isLocked = () => {
+    const lock = getState()?.lock;
+    return Boolean(lock && lock.set && !lock.unlocked);
+};
+
 export function renderClips(state) {
     timeline = state;
+    renderRow();
+}
+
+// The lock changed: the Watch buttons say whether they need the unlock
+export function renderClipsLock() {
     renderRow();
 }
 
@@ -80,7 +94,8 @@ function setPlaying(playing) {
     }, FRAME_MS);
 }
 
-function open(clip) {
+// Also opened from the bowl history (cards/history.js), over its dialog
+export function openClip(clip) {
     const frames = Array.from({ length: clip.frames }, (_, i) => {
         const img = new Image();
         img.src = frameUrl(clip, i);
@@ -112,7 +127,9 @@ export function initClips() {
     $('#clip-row').addEventListener('click', e => {
         const button = e.target.closest('[data-clip]');
         const clip = button && activeEntry()?.clips.find(c => c.id === button.dataset.clip);
-        if (clip) open(clip);
+        if (!clip) return;
+        if (isLocked()) requestUnlock().then(unlocked => { if (unlocked) openClip(clip); });
+        else openClip(clip);
     });
 
     const dialog = $('#clip-player');

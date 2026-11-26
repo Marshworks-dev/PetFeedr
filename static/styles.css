@@ -1492,6 +1492,22 @@ body {
     min-width: 5em;
 }
 
+/* Pushed to the row's end; the whole picture dialog opens at that meal */
+.day-detail-bowl {
+    margin-left: auto;
+    min-height: 44px;
+    padding: 0 0.6rem;
+    border: 0;
+    background: none;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
 .day-detail-portion {
     font-size: var(--fs-xs);
     padding: 0.1rem 0.4rem;
@@ -2606,6 +2622,273 @@ body:has(.sheet[open]) {
 }
 
 body:has(.bowl-full[open]) { overflow: hidden; }
+
+/* ===== Bowl history (cards/history.js) =====
+   The dialog is black in both themes, so the bar has its own light marks:
+   sky for feeds (the 7-day card's dark-theme primary), amber for blind
+   stretches, the danger red lifted for a black background */
+.bowl-full {
+    --history-feed: #8bb4dc;
+    --history-blind: #e0a84a;
+    --history-missed: #ff8a80;
+    --history-dim: rgba(255, 255, 255, 0.7);
+}
+
+/* Room under the picture for the bar */
+.bowl-full.has-history img { max-height: calc(100dvh - 310px); }
+
+.history { padding: 0.25rem 0.9rem 0.75rem; }
+
+.history-days {
+    display: flex;
+    gap: 0.3rem;
+    overflow-x: auto;
+    padding-bottom: 0.4rem;
+    scrollbar-width: none;
+}
+
+.history-day {
+    flex: none;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 0.5rem;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 999px;
+    background: none;
+    color: #fff;
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.history-day[aria-pressed="true"] {
+    background: #fff;
+    border-color: #fff;
+    color: #000;
+}
+
+.history-track {
+    position: relative;
+    height: 48px;
+}
+
+.history-marks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+/* The day's baseline */
+.history-marks::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.history-blind {
+    position: absolute;
+    top: 4px;
+    height: 6px;
+    left: calc(var(--from) * 1%);
+    width: max(2px, calc((var(--to) - var(--from)) * 1%));
+    border-radius: 3px;
+    background: var(--history-blind);
+}
+
+/* No picture at all: striped, so it reads as missing rather than dark */
+.history-blind.is-offline {
+    background: repeating-linear-gradient(90deg, var(--history-dim) 0 3px, transparent 3px 6px);
+}
+
+.history-alert {
+    position: absolute;
+    top: 0;
+    left: calc(var(--pct) * 1%);
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 7px solid var(--history-blind);
+    transform: translateX(-50%);
+}
+
+/* Later today: nothing to see yet */
+.history-future {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--from) * 1%);
+    right: 0;
+    background: rgba(255, 255, 255, 0.07);
+}
+
+.history-mark {
+    position: absolute;
+    top: 50%;
+    left: calc(var(--pct) * 1%);
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-sizing: border-box;
+    background: var(--history-feed);
+}
+
+.history-mark.size-medium { width: 12px; height: 12px; }
+.history-mark.size-large  { width: 15px; height: 15px; }
+.history-mark.mark-manual { background: #000; border: 2px solid var(--history-feed); }
+.history-mark.mark-pulse  { width: 6px; height: 6px; }
+
+.history-mark.mark-missed,
+.history-mark.mark-failed {
+    display: grid;
+    place-items: center;
+    width: 14px;
+    height: 14px;
+    background: none;
+    color: var(--history-missed);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.history-mark.mark-missed::before,
+.history-mark.mark-failed::before { content: '\2715'; }
+
+/* The slider sits over the marks: its own track is invisible, and the thumb
+   is a white line the full height of the bar with a 24px-wide grip */
+.history-scrub {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 48px;
+    margin: 0;
+    background: transparent;
+    -webkit-appearance: none;
+    appearance: none;
+    cursor: pointer;
+}
+
+.history-scrub:disabled { cursor: default; opacity: 0.4; }
+
+.history-scrub::-webkit-slider-runnable-track { height: 48px; background: transparent; }
+.history-scrub::-moz-range-track { height: 48px; background: transparent; }
+
+.history-scrub::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 24px;
+    height: 48px;
+    border: 0;
+    background: linear-gradient(90deg, transparent 10px, #fff 10px 14px, transparent 14px);
+}
+
+.history-scrub::-moz-range-thumb {
+    width: 24px;
+    height: 48px;
+    border: 0;
+    border-radius: 0;
+    background: linear-gradient(90deg, transparent 10px, #fff 10px 14px, transparent 14px);
+}
+
+.history-scrub:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+.history-hours {
+    display: flex;
+    justify-content: space-between;
+    color: var(--history-dim);
+    font-size: var(--fs-xs);
+}
+
+/* A meal the camera read as not eaten in 30 min, or not finished from the
+   one before: an amber ring, so it stands out from the plain dots */
+.history-mark.is-uneaten,
+.history-mark.is-leftover {
+    box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--history-blind);
+}
+
+/* The feed nearest the slider */
+.history-feed { margin-top: 0.4rem; }
+
+.history-feed-head {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.history-feed-text {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-sm);
+    text-align: center;
+}
+
+.history-step {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: none;
+    color: #fff;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.history-step:disabled { opacity: 0.3; cursor: default; }
+
+.history-feed-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.history-act {
+    min-height: 44px;
+    padding: 0 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: var(--radius-md);
+    background: none;
+    color: #fff;
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.history-act:hover { background: rgba(255, 255, 255, 0.12); }
+
+.history-note {
+    color: var(--history-dim);
+    font-size: var(--fs-sm);
+}
+
+.history-status {
+    min-height: 1.4em;
+    margin-top: 0.3rem;
+    font-size: var(--fs-sm);
+}
+
+.history-locked { padding: 0.5rem 0.9rem 0.9rem; }
+
+.history-unlock {
+    min-height: 44px;
+    padding: 0.5rem 0.9rem;
+    border: 2px solid #fff;
+    border-radius: var(--radius-md);
+    background: none;
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
 
 /* ===== Feed clips ===== */
 .clip-row {

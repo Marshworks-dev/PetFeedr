@@ -5,6 +5,7 @@
 // reader.
 
 import { $ } from '../dom.js';
+import { openHistory, browsingHistory } from './history.js';
 
 // A screen left open and untouched stops fetching new pictures after this
 // long (each is about 70 KB); the next touch or key press brings it back
@@ -42,12 +43,31 @@ export function renderCamera(camera) {
     chip.dataset.when = camera.label;
     chip.classList.toggle('is-offline', !camera.online);
 
-    // The open dialog follows along when a new frame lands
+    // The open dialog follows along when a new frame lands, unless it is
+    // showing an earlier picture from the history bar
+    if (browsingHistory()) return;
     $('#bowl-full-when').textContent = camera.label;
     const full = $('#bowl-full-frame');
     full.alt = camera.alt;
     if ($('#bowl-full').open && full.getAttribute('src') !== camera.src) full.src = camera.src;
 }
+
+// The full picture. `jump` ({ date, minute }) opens the history at that
+// meal instead of "now": the Last 7 Days list's "See the bowl"
+export function openBowl(jump = null) {
+    const dialog = $('#bowl-full');
+    // Loaded on first open, from the browser's copy of the cropped view
+    $('#bowl-full-frame').src = $('#bowl-frame').getAttribute('src');
+    if (lastCamera) {
+        $('#bowl-full-when').textContent = lastCamera.label;
+        $('#bowl-full-frame').alt = lastCamera.alt;
+    }
+    openHistory(jump);
+    // Native <dialog>: focus trap, Esc, and focus back on what opened it at close
+    dialog.showModal();
+}
+
+export const hasCamera = () => Boolean(lastCamera && lastCamera.src);
 
 export function initCamera() {
     for (const type of ['pointerdown', 'keydown']) {
@@ -58,12 +78,7 @@ export function initCamera() {
         }, { passive: true, capture: true });
     }
     const dialog = $('#bowl-full');
-    $('#bowl-open').addEventListener('click', () => {
-        // Loaded on first open, from the browser's copy of the cropped view
-        $('#bowl-full-frame').src = $('#bowl-frame').getAttribute('src');
-        // Native <dialog>: focus trap, Esc, and focus back on the picture at close
-        dialog.showModal();
-    });
+    $('#bowl-open').addEventListener('click', () => openBowl());
     $('#bowl-close').addEventListener('click', () => dialog.close());
     // A tap on the backdrop lands on the dialog element itself
     dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });

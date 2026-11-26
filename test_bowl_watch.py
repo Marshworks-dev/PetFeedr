@@ -143,6 +143,9 @@ class WatchCase(unittest.TestCase):
         os.chdir(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
         self.addCleanup(os.chdir, self._olddir)
+        # Runs first (cleanups are last-in, first-out): a background clip
+        # reading finishes here, never after the move back into the repo
+        self.addCleanup(self._join_clip_threads)
         self.sent = []
         # A frame's bytes say what it shows: b'empty', b'food', b'cat', b'dark' ...
         self.watch = bw.Watch(read=self._read, send=lambda m, title='': self.sent.append(m),
@@ -151,6 +154,13 @@ class WatchCase(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop('PETFEEDR_MEAL_ALERTS', None)
+
+    @staticmethod
+    def _join_clip_threads():
+        import threading
+        for t in threading.enumerate():
+            if t.name == 'bowl-watch-clip':
+                t.join(5)
 
     @staticmethod
     def _read(jpeg):
@@ -368,11 +378,19 @@ class TestClipReadingsInBackground(WatchCase):
             return {'view': 'clear', 'bowl': 'empty', 'specks': None}
 
         watch = bw.Watch(read=slow_read, send=MagicMock())
+        # The line is written after the read returns; wait for the write too, or
+        # the thread writes it after cleanup has moved back into the repo
+        recorded = threading.Event()
+        record = watch._record
+        watch._record = lambda fields, at: (record(fields, at), recorded.set())
         watch.clip_saved('2026-11-27T153001', [(self.T0 - 1, b'x')], self.T0)
         # Back already, with the reading still waiting
         self.assertFalse(done.is_set())
         release.set()
         self.assertTrue(done.wait(5))
+        self.assertTrue(recorded.wait(5))
+        # Landed in this test's own folder
+        self.assertEqual([r['kind'] for r in self.readings()], ['before'])
 
 
 class TestCameraHandsOver(unittest.TestCase):

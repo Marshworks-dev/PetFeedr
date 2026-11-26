@@ -22,6 +22,11 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
+      # Node for the front-end's node:test file (test_history.mjs), which the
+      # unittest run calls; ES modules in .js files need Node 22.12 or later
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       # A venv, not --user: Ubuntu's Python refuses system-wide pip installs
       - name: Install
         run: python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt

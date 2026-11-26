@@ -255,6 +255,14 @@ def frame_names():
     return sorted(n for n in names if _NAME_RE.match(n))
 
 
+def saved_frame_path(name):
+    """The file for a saved frame, or None. The name must be exactly one the
+    frames folder lists; the path is built from that listed name, so nothing
+    from a request reaches the filesystem unchecked."""
+    listed = next((n for n in frame_names() if n == name), None)
+    return os.path.join(FRAMES_DIR, listed) if listed else None
+
+
 def latest_frame():
     # The pattern alone would pass "2026-13-45T999999.jpg"; a name that isn't
     # a real time must not become the latest frame and break the dashboard.

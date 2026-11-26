@@ -2515,7 +2515,7 @@ class TestCamera(CameraCase):
     def test_camera_code_is_apart_from_the_feed_path(self):
         from pathlib import Path
         repo = Path(self.camera.__file__).parent
-        for module in ('camera.py', 'bowl_watch.py'):
+        for module in ('camera.py', 'bowl_watch.py', 'bowl_history.py'):
             source = (repo / module).read_text()
             self.assertNotIn('STATE_LOCK', source, module)
             self.assertNotIn('feeder_core', source, module)
@@ -2523,6 +2523,7 @@ class TestCamera(CameraCase):
             source = (repo / feed_module).read_text()
             self.assertNotIn('camera', source, feed_module)
             self.assertNotIn('bowl_watch', source, feed_module)
+            self.assertNotIn('bowl_history', source, feed_module)
 
 
 class TestMicOff(unittest.TestCase):
@@ -3428,3 +3429,237 @@ class TestNoPersonalSetup(unittest.TestCase):
                 f.write('PI_HOST=pi@petfeedr.local /home/pi/PetFeedr /home/<user>/x '
                         'a@example.com petfeedr.example.ts.net\n')
             self.assertEqual(find_personal_markers(tmp, private_terms=[]), [])
+
+
+class TestBowlHistory(CameraCase):
+    """The day view behind the history timeline: frames, feeds, bowl readings."""
+
+    def setUp(self):
+        super().setUp()
+        import web_interface
+        import bowl_history
+        self.history = bowl_history
+        self.client = web_interface.app.test_client()
+        self.today = date.today()
+        self.day = self.today.isoformat()
+        d = self.day
+        os.makedirs(self.camera.FRAMES_DIR)
+        for name in (f'{d}T082500.jpg', f'{d}T083000.jpg', f'{d}T090000.jpg',
+                     f'{(self.today - timedelta(days=1)).isoformat()}T120000.jpg',
+                     f'{d}T083000.jpg.part', 'notes.txt'):
+            with open(os.path.join(self.camera.FRAMES_DIR, name), 'wb') as f:
+                f.write(b'\xff\xd8 ' + name.encode())
+        t = datetime.fromisoformat(f'{d}T08:30:01').timestamp()
+        self.camera.save_clip(f'{d}T083001', [(t - 1, b'\xff\xd8 a'), (t, b'\xff\xd8 b')], t)
+        self.events = [
+            {'ts': f'{d}T08:30:01', 'event': 'dispense', 'portion': 'small', 'source': 'scheduled',
+             'duration_s': 5, 'scheduled_for': '08:30'},
+            {'ts': f'{d}T12:00:00', 'event': 'missed', 'portion': 'small', 'scheduled_for': '12:00'},
+            {'ts': f'{d}T13:00:00', 'event': 'refill', 'remaining_pct': 10},      # not a feed
+            {'ts': f'{(self.today - timedelta(days=1)).isoformat()}T08:30:01', 'event': 'dispense'},
+        ]
+        self._write_events(self.events)
+        self.readings = [
+            {'ts': f'{d}T08:25:00', 'kind': 'frame', 'frame': f'{d}T082500.jpg', 'view': 'clear', 'bowl': 'empty'},
+            {'ts': f'{d}T08:30:00', 'kind': 'frame', 'frame': f'{d}T083000.jpg', 'view': 'dark', 'bowl': 'unknown'},
+            {'ts': f'{d}T08:30:01', 'kind': 'before', 'feed': f'{d}T083001',
+             'frame': f'clips/{d}T083001/000.jpg', 'view': 'clear', 'bowl': 'empty'},
+            {'ts': f'{d}T09:00:00', 'kind': 'after', 'feed': f'{d}T083001',
+             'frame': f'{d}T090000.jpg', 'view': 'clear', 'bowl': 'food'},
+            {'ts': f'{d}T10:00:00', 'kind': 'camera', 'view': 'blocked', 'alert': 'sent'},
+            {'ts': f'{d}T10:05:00<b>', 'kind': 'camera', 'view': 'dark', 'alert': 'sent'},   # odd ts: dropped
+        ]
+        self._write_readings(self.readings)
+
+    def _write_events(self, rows):
+        with open('feeding_events.jsonl', 'w') as f:
+            f.write(''.join(json.dumps(r) + '\n' for r in rows))
+
+    def _write_readings(self, rows, extra=''):
+        os.makedirs('data', exist_ok=True)
+        with open(self.history.bowl_watch.READINGS_FILE, 'w') as f:
+            f.write(''.join(json.dumps(r) + '\n' for r in rows) + extra)
+
+    def _day(self, date_str=None):
+        return self.client.get(f'/api/camera/day/{date_str or self.day}')
+
+    def test_a_day_has_its_frames_feeds_and_readings(self):
+        resp = self._day()
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()['data']
+        d = self.day
+        self.assertEqual(data['frames'], [f'{d}T082500.jpg', f'{d}T083000.jpg', f'{d}T090000.jpg'])
+        self.assertEqual([f['event'] for f in data['feeds']], ['dispense', 'missed'])
+        meal = data['feeds'][0]
+        self.assertEqual(meal['clip'], {'id': f'{d}T083001', 'frames': 2, 'landed': 1})
+        self.assertEqual(meal['before'], {'view': 'clear', 'bowl': 'empty',
+                                          'picture': {'clip': f'{d}T083001', 'index': 0}})
+        self.assertEqual(meal['after'], {'view': 'clear', 'bowl': 'food',
+                                         'picture': {'frame': f'{d}T090000.jpg'}})
+        self.assertIsNone(data['feeds'][1]['clip'])
+        self.assertEqual([r['view'] for r in data['frame_readings']], ['clear', 'dark'])
+        self.assertEqual(data['camera_alerts'], [{'ts': f'{d}T10:00:00', 'view': 'blocked'}])
+
+    def test_a_late_feeds_after_reading_the_next_day_still_matches(self):
+        yesterday = (self.today - timedelta(days=1)).isoformat()
+        self._write_events([{'ts': f'{yesterday}T23:50:00', 'event': 'dispense', 'duration_s': 5}])
+        self._write_readings([{'ts': f'{self.day}T00:20:00', 'kind': 'after', 'feed': f'{yesterday}T235000',
+                               'frame': f'{self.day}T002000.jpg', 'view': 'clear', 'bowl': 'empty'}])
+        feed = self._day(yesterday).get_json()['data']['feeds'][0]
+        self.assertEqual(feed['after']['bowl'], 'empty')
+
+    def test_bad_or_out_of_range_dates_are_a_400(self):
+        for bad in ('yesterday', '2026-13-01', '2026-02-30', '2026-1-1', ' ' + self.day,
+                    (self.today + timedelta(days=1)).isoformat(),
+                    (self.today - timedelta(days=7)).isoformat(), 'x' * 300):
+            with self.subTest(bad=bad):
+                self.assertEqual(self._day(bad).status_code, 400)
+        self.assertIsNone(self.history.parse_day(self.day + '\n'))
+        self.assertEqual(self._day((self.today - timedelta(days=6)).isoformat()).status_code, 200)
+
+    def test_torn_or_odd_lines_are_skipped_not_a_500(self):
+        d = self.day
+        odd = [
+            {'ts': f'{d}T08:35:00', 'kind': 'frame', 'frame': '../../feeding_schedules.txt', 'view': 'clear'},
+            {'ts': f'{d}T08:40:00', 'kind': 'frame', 'frame': f'{d}T084000.jpg', 'view': '<b>x</b>', 'bowl': 7},
+            {'ts': 12, 'kind': 'frame', 'frame': f'{d}T084500.jpg'},
+            ['not', 'a', 'dict'],
+            {'ts': f'{d}T08:30:01', 'kind': 'before', 'feed': f'{d}T083001',
+             'frame': '/etc/passwd', 'view': 'clear', 'bowl': 'empty'},
+        ]
+        self._write_readings(odd, extra='{"ts": "' + d + 'T09:0')     # torn by a power cut
+        self._write_events(self.events + [
+            'not json', {'ts': 'garbage', 'event': 'dispense'}, {'event': 'dispense'},
+            {'ts': f'{d}T14:00:00', 'event': 'dispense', 'portion': {'nested': True}, 'pulse': True},
+        ])
+        with open('feeding_events.jsonl', 'a') as f:
+            f.write('{"ts": "' + d + 'T15:0\n')
+        with self.assertLogs('petfeedr', 'WARNING'):     # read_all says it skipped lines
+            resp = self._day()
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()['data']
+        self.assertEqual(data['frame_readings'], [{'frame': f'{d}T084000.jpg', 'view': 'unknown', 'bowl': 'unknown'}])
+        self.assertIsNone(data['feeds'][0]['before']['picture'])
+        odd_feed = data['feeds'][-1]
+        self.assertEqual((odd_feed['ts'], odd_feed['portion'], odd_feed['pulse']), (f'{d}T14:00:00', None, None))
+
+    def test_no_readings_file_or_journal_is_an_empty_day(self):
+        os.remove(self.history.bowl_watch.READINGS_FILE)
+        os.remove('feeding_events.jsonl')
+        data = self._day().get_json()['data']
+        self.assertEqual((data['feeds'], data['frame_readings'], data['camera_alerts']), ([], [], []))
+
+    def test_a_dev_boxs_simulated_feeds_never_show_on_a_real_feeder(self):
+        self._write_events([{**self.events[0], 'sim': True}])
+        with patch.object(self.history, 'SIMULATION_MODE', False):
+            self.assertEqual(self._day().get_json()['data']['feeds'], [])
+        with patch.object(self.history, 'SIMULATION_MODE', True):
+            self.assertEqual(len(self._day().get_json()['data']['feeds']), 1)
+
+    def test_serves_a_saved_frame_by_its_exact_listed_name(self):
+        name = f'{self.day}T083000.jpg'
+        resp = self.client.get(f'/camera/frame/{name}')
+        self.assertEqual((resp.status_code, resp.mimetype, resp.data),
+                         (200, 'image/jpeg', b'\xff\xd8 ' + name.encode()))
+        self.assertIn('private', resp.headers['Cache-Control'])
+        resp.close()
+
+    def test_only_a_listed_frame_name_reaches_a_file(self):
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("08:00,small\n")
+        d = self.day
+        for path in (f'/camera/frame/{d}T083000.jpg.part',
+                     f'/camera/frame/{d}T083100.jpg',                 # shaped right, no such file
+                     '/camera/frame/notes.txt',
+                     '/camera/frame/..%2f..%2ffeeding_schedules.txt',
+                     '/camera/frame/../../feeding_schedules.txt',
+                     '/camera/frame/%2e%2e%2ffeeding_schedules.txt',
+                     f'/camera/frame/{d}T083000.jpg%00',
+                     '/camera/frame/'):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+        self.assertIsNone(self.camera.saved_frame_path(f'{d}T083000.jpg\n'))
+        self.assertIsNone(self.camera.saved_frame_path(None))
+
+    def test_routes_are_read_only_and_host_checked(self):
+        self.assertEqual(self.client.post(f'/camera/frame/{self.day}T083000.jpg').status_code, 405)
+        self.assertEqual(self.client.post(f'/api/camera/day/{self.day}').status_code, 405)
+        resp = self.client.get(f'/api/camera/day/{self.day}', headers={'Host': 'evil.example:5000'})
+        self.assertEqual(resp.status_code, 421)
+
+
+class TestCameraHistoryGate(PasscodeCase):
+    """Past pictures, clips and bowl readings need the unlock; the latest picture doesn't."""
+
+    def _private_urls(self):
+        today = date.today().isoformat()
+        return [f'/api/camera/day/{today}', f'/camera/frame/{today}T083000.jpg',
+                '/camera/clips/2026-11-15T153001/0.jpg']
+
+    def test_with_no_passcode_the_history_is_open(self):
+        self.assertEqual(self.client.get(f'/api/camera/day/{date.today().isoformat()}').status_code, 200)
+
+    def test_history_is_refused_while_locked(self):
+        self.passcode.set_passcode('4821')
+        for url in self._private_urls():
+            with self.subTest(url=url):
+                resp = self.client.get(url, headers=self.json)
+                self.assertEqual(resp.status_code, 401)
+                self.assertTrue(resp.get_json()['locked'])
+                self.assertEqual(self.client.get(url).status_code, 401)           # an <img> request
+                self.assertEqual(self.client.head(url).status_code, 401)
+        self.assertEqual(self.client.get('/camera/latest.jpg').status_code, 404)   # open; just no frame
+
+    def test_unlocked_device_sees_the_history(self):
+        self.passcode.set_passcode('4821')
+        self.assertEqual(self.client.post('/unlock', data={'passcode': '4821'}, headers=self.json).status_code, 200)
+        self.assertEqual(self.client.get(self._private_urls()[0]).status_code, 200)
+        for url in self._private_urls()[1:]:
+            self.assertEqual(self.client.get(url).status_code, 404)   # through the gate; no such file
+
+    def test_a_doubled_slash_or_odd_spelling_is_still_gated(self):
+        self.passcode.set_passcode('4821')
+        today = date.today().isoformat()
+        for url in (f'/camera//frame/{today}T083000.jpg', f'/api/camera//day/{today}',
+                    '/camera/clips//2026-11-15T153001/0.jpg', '/camera/latest.jpg/../frame/x.jpg'):
+            self.assertIn(self.client.get(url).status_code, (401, 404), url)
+            self.assertNotEqual(self.client.get(url).status_code, 200, url)
+
+    def test_every_camera_read_route_is_gated_but_the_latest_picture(self):
+        # A new /camera/ or /api/camera/ route starts locked; going open takes
+        # an edit to lock_routes._OPEN_CAMERA_READS, which this test pins
+        import lock_routes
+        self.assertEqual(lock_routes._OPEN_CAMERA_READS, {'/camera/latest.jpg'})
+        self.passcode.set_passcode('4821')
+        camera_rules = [r for r in self.web.app.url_map.iter_rules()
+                        if r.rule.startswith(('/camera', '/api/camera')) and 'GET' in r.methods]
+        self.assertGreaterEqual(len(camera_rules), 4)
+        for rule in camera_rules:
+            values = {a: 0 if 'int' in type(rule._converters[a]).__name__.lower() else 'x'
+                      for a in rule.arguments}
+            with self.web.app.test_request_context():
+                from flask import url_for
+                url = url_for(rule.endpoint, **values)
+            status = self.client.get(url).status_code
+            if rule.rule == '/camera/latest.jpg':
+                self.assertNotEqual(status, 401, url)
+            else:
+                self.assertEqual(status, 401, url)
+
+
+class TestHistoryModelJS(unittest.TestCase):
+    """The bowl history's front-end arithmetic has node:test tests
+    (test_history.mjs); this runs them, so one unittest run covers both."""
+
+    def test_node_tests_pass(self):
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if not node:
+            # CI must run them; a box without node (the Pi) skips
+            if os.environ.get('CI'):
+                self.fail('node is not installed on CI')
+            self.skipTest('node not installed')
+        here = os.path.dirname(os.path.abspath(__file__))
+        run = subprocess.run([node, '--test', 'test_history.mjs'], cwd=here,
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stdout[-3000:] + run.stderr[-2000:])

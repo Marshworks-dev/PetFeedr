@@ -6,6 +6,8 @@ import { $, $$, html, setHTML } from '../dom.js';
 import { fetchDayDetail } from '../api.js';
 import { onTick, minutesOfDay } from '../ticker.js';
 import { crumbsMarkup } from './timeline.js';
+import { hasCamera, openBowl } from './camera.js';
+import { parseClock } from '../history-model.js';
 
 let selectedDate = null;
 
@@ -70,6 +72,8 @@ async function openDay(row) {
             setHTML(panel, html`<div class="day-detail-message">No feedings recorded</div>`);
             return;
         }
+        // Saved pictures go back 7 days, the length of this card
+        const bowl = hasCamera();
         const dayName = new Date(`${date}T12:00:00`)
             .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
         setHTML(panel, html`
@@ -83,6 +87,8 @@ async function openDay(row) {
                         <span class="day-detail-time">${f.time}</span>
                         <span class="day-detail-portion portion-${f.portion}" title="${f.cups} cups">${f.portion}<span class="detail-cups">${f.cups} cup${f.cups !== 1 ? 's' : ''}</span></span>
                         <span class="day-detail-type">${f.type}</span>
+                        ${bowl ? html`<button type="button" class="day-detail-bowl" data-bowl-time="${f.time}"
+                            aria-label="See the bowl at the ${f.time} feeding">See the bowl</button>` : ''}
                     </li>`)}
             </ul>`);
     } catch {
@@ -124,6 +130,12 @@ export function renderStats(stats) {
 
 export function initStats() {
     onTick(placeNow);
+    // A feeding's "See the bowl": the picture dialog at that meal's Before picture
+    $('#day-detail').addEventListener('click', e => {
+        const time = e.target.closest('[data-bowl-time]')?.dataset.bowlTime;
+        const minute = parseClock(time);
+        if (selectedDate && minute !== null) openBowl({ date: selectedDate, minute });
+    });
     const body = $('#stats-body');
     body.addEventListener('click', e => {
         const row = e.target.closest('.rhythm-row');
