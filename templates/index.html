@@ -214,6 +214,14 @@
                     <input type="range" class="history-scrub" id="history-scrub" min="0" max="1435" step="5" value="1435" aria-label="Time of day">
                 </div>
                 <div class="history-hours" aria-hidden="true"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>
+                <div class="history-feed" id="history-feed" hidden>
+                    <div class="history-feed-head">
+                        <button type="button" class="history-step" id="history-prev" aria-label="Earlier feed">‹</button>
+                        <p class="history-feed-text" id="history-feed-text"></p>
+                        <button type="button" class="history-step" id="history-next" aria-label="Later feed">›</button>
+                    </div>
+                    <div class="history-feed-actions" id="history-feed-actions"></div>
+                </div>
                 <p class="history-status" id="history-status"></p>
             </div>
             <p class="history-locked" id="history-locked" hidden>

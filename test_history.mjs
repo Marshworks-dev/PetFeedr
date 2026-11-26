@@ -109,3 +109,75 @@ test('day chips: today first, seven days, local dates', () => {
     assert.equal(days[1].date, '2026-02-28');
     assert.equal(days[6].date, '2026-02-23');
 });
+
+import {
+    nearestFeed, readingWords, mealFlag, beforeTarget, afterTarget, parseClock, feedName,
+} from './static/js/history-model.js';
+
+const meal = (before, after, extra = {}) => feedMarks([{
+    ts: '2026-11-26T17:30:00', event: 'dispense', source: 'scheduled', portion: 'small',
+    clip: { id: '2026-11-26T173000', frames: 80, landed: 20 }, before, after, ...extra,
+}])[0];
+
+test('the slider adds what the camera read in that frame', () => {
+    const marks = [meal(null, null)];
+    assert.equal(valueText('Tue', 1045, marks, { view: 'clear', bowl: 'empty' }),
+        'Tue 5:25 PM, 5 min before the 5:30 PM feed, camera read empty');
+    assert.equal(valueText('Tue', 600, marks, { view: 'dark', bowl: 'unknown' }), "Tue 10:00 AM, camera couldn't see");
+    assert.equal(valueText('Tue', 600, marks, { view: 'clear', bowl: 'unknown' }), 'Tue 10:00 AM');
+});
+
+test('a meal says what the camera read before and 30 min after', () => {
+    const empty = { view: 'clear', bowl: 'empty', picture: null };
+    const food = { view: 'clear', bowl: 'food', picture: null };
+    const unknown = { view: 'blocked', bowl: 'unknown', picture: null };
+    assert.equal(readingWords(meal(empty, food)), 'Camera read: empty before · food left 30 min after');
+    assert.equal(readingWords(meal(food, empty)), 'Camera read: food still there before · empty 30 min after');
+    assert.equal(readingWords(meal(unknown, unknown)), "Camera read: couldn't tell before · couldn't tell 30 min after");
+    // Fed 10 minutes ago: the after reading is still to come
+    assert.equal(readingWords(meal(empty, null), 10), 'Camera read: empty before · 30-min look still to come');
+    // Long past with no after reading: say only what there is
+    assert.equal(readingWords(meal(empty, null), 300), 'Camera read: empty before');
+    assert.equal(readingWords(meal(null, null)), null);
+    // A garbled reading reads as couldn't tell, never as a word from the file
+    assert.equal(readingWords(meal({ bowl: '<b>' }, null)), "Camera read: couldn't tell before");
+    // Graze pulses and missed feeds get no readings
+    const [pulse, missed] = feedMarks([{ ts: '2026-11-26T12:00:00', event: 'graze_pulse' },
+        { ts: '2026-11-26T13:00:00', event: 'missed' }]);
+    assert.equal(readingWords(pulse), null);
+    assert.equal(readingWords(missed), null);
+});
+
+test('uneaten and leftover meals are flagged on the bar', () => {
+    assert.equal(mealFlag(meal(null, { bowl: 'food' })), 'uneaten');
+    assert.equal(mealFlag(meal({ bowl: 'food' }, { bowl: 'empty' })), 'leftover');
+    assert.equal(mealFlag(meal({ bowl: 'empty' }, { bowl: 'empty' })), null);
+    assert.equal(mealFlag(meal({ bowl: 'unknown' }, null)), null);
+});
+
+test('Before jumps to the clip frame read, else the last frame ahead of the feed', () => {
+    const frames = [F('1720'), F('1725'), F('1735')];
+    assert.deepEqual(beforeTarget(meal({ bowl: 'empty', picture: { clip: '2026-11-26T173000', index: 3 } }, null), frames),
+        { clip: '2026-11-26T173000', index: 3 });
+    assert.deepEqual(beforeTarget(meal(null, null), frames), { frame: F('1725') });
+    assert.equal(beforeTarget(meal(null, null), [F('1735')]), null);
+});
+
+test('30 min after jumps to the frame read, else the first frame 30 min on', () => {
+    const frames = [F('1755'), F('1800'), F('1805')];
+    assert.deepEqual(afterTarget(meal(null, { bowl: 'food', picture: { frame: '2026-11-27T000500.jpg' } }), frames),
+        { frame: '2026-11-27T000500.jpg' });   // a late feed's after picture is the next day's
+    assert.deepEqual(afterTarget(meal(null, null), frames), { frame: F('1800') });
+    assert.equal(afterTarget(meal(null, null), [F('1755')]), null);
+});
+
+test('the nearest feed to a slider position, and the Last 7 Days times', () => {
+    const marks = [meal(null, null)];
+    assert.equal(nearestFeed(marks, 1080), marks[0]);
+    assert.equal(nearestFeed(marks, 1200), null);
+    assert.equal(feedName(marks[0]), '5:30 PM feed');
+    assert.equal(parseClock('5:30 PM'), 1050);
+    assert.equal(parseClock('12:05 AM'), 5);
+    assert.equal(parseClock('12:00 PM'), 720);
+    assert.equal(parseClock('nonsense'), null);
+});

@@ -1492,6 +1492,22 @@ body {
     min-width: 5em;
 }
 
+/* Pushed to the row's end; the whole picture dialog opens at that meal */
+.day-detail-bowl {
+    margin-left: auto;
+    min-height: 44px;
+    padding: 0 0.6rem;
+    border: 0;
+    background: none;
+    color: var(--color-primary);
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
 .day-detail-portion {
     font-size: var(--fs-xs);
     padding: 0.1rem 0.4rem;
@@ -2619,7 +2635,7 @@ body:has(.bowl-full[open]) { overflow: hidden; }
 }
 
 /* Room under the picture for the bar */
-.bowl-full.has-history img { max-height: calc(100dvh - 210px); }
+.bowl-full.has-history img { max-height: calc(100dvh - 310px); }
 
 .history { padding: 0.25rem 0.9rem 0.75rem; }
 
@@ -2787,6 +2803,71 @@ body:has(.bowl-full[open]) { overflow: hidden; }
     justify-content: space-between;
     color: var(--history-dim);
     font-size: var(--fs-xs);
+}
+
+/* A meal the camera read as not eaten in 30 min, or not finished from the
+   one before: an amber ring, so it stands out from the plain dots */
+.history-mark.is-uneaten,
+.history-mark.is-leftover {
+    box-shadow: 0 0 0 2px #000, 0 0 0 4px var(--history-blind);
+}
+
+/* The feed nearest the slider */
+.history-feed { margin-top: 0.4rem; }
+
+.history-feed-head {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.history-feed-text {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--fs-sm);
+    text-align: center;
+}
+
+.history-step {
+    flex: none;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: none;
+    color: #fff;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.history-step:disabled { opacity: 0.3; cursor: default; }
+
+.history-feed-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.history-act {
+    min-height: 44px;
+    padding: 0 0.8rem;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: var(--radius-md);
+    background: none;
+    color: #fff;
+    font: inherit;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.history-act:hover { background: rgba(255, 255, 255, 0.12); }
+
+.history-note {
+    color: var(--history-dim);
+    font-size: var(--fs-sm);
 }
 
 .history-status {

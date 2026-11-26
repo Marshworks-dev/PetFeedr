@@ -27,8 +27,10 @@ _FEED_EVENTS = ('dispense', 'graze_pulse', 'failure', 'missed')
 _VIEWS = {'clear', 'dark', 'blocked', 'unreadable', 'unknown', 'offline'}
 _BOWLS = {'empty', 'food', 'unknown'}
 # Where bowl watch says a before reading's picture came from
-_CLIP_FRAME_RE = re.compile(r'^clips/(\d{4}-\d{2}-\d{2}T\d{6})/(\d{3})\.jpg$')
-_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+# ASCII only: \d would also take other scripts' digits
+_CLIP_FRAME_RE = re.compile(r'^clips/([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{6})/([0-9]{3})\.jpg$')
+_DATE_RE = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+_TS_RE = re.compile(r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$')
 
 
 def parse_day(date_str, today=None):
@@ -105,7 +107,7 @@ def _readings(day):
             # the next day. The last line for a feed wins
             by_feed.setdefault(line['feed'], {})[kind] = {
                 **_reading(line), 'picture': _picture(kind, line.get('frame'))}
-        elif kind == 'camera' and same_day and line.get('alert') == 'sent':
+        elif kind == 'camera' and same_day and line.get('alert') == 'sent' and _TS_RE.fullmatch(line['ts']):
             alerts.append({'ts': line['ts'], 'view': _reading(line)['view']})
     return frames, by_feed, alerts
 
@@ -119,10 +121,13 @@ def _count(value):
 
 
 def _clip_for(event):
+    """{'id', 'frames', 'landed'} of the event's saved clip, for the clip
+    player, or None."""
     if not camera.clip_window(event):
         return None
     clip_id = camera.clip_id_for(event['ts'])
-    return clip_id if camera.clip_info(clip_id) else None
+    info = camera.clip_info(clip_id)
+    return {'id': clip_id, **info} if info else None
 
 
 def _feeds(day, by_feed):

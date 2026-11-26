@@ -16,7 +16,7 @@ import { initFeedPanel } from './cards/feedpanel.js';
 import { watchPours } from './pour.js';
 import { initCamera, renderCamera } from './cards/camera.js';
 import { initHistory, renderHistoryLock } from './cards/history.js';
-import { initClips, renderClips, clipPlayerOpen } from './cards/clips.js';
+import { initClips, renderClips, renderClipsLock, clipPlayerOpen } from './cards/clips.js';
 import { initLock, renderLock } from './cards/lock.js';
 import { initSheet, renderSheet } from './cards/sheet.js';
 import { renderFooter, setOffline } from './cards/footer.js';
@@ -80,6 +80,7 @@ function registerCards() {
     register(s => s.timeline, renderClips);
     register(s => s.lock, renderLock);
     register(s => s.lock, renderHistoryLock);
+    register(s => s.lock, renderClipsLock);
     register(s => s.schedule, renderSheet);
     register(s => ({ app: s.app, lastFed: s.last_fed }), renderFooter);
     register(s => s.asset_version, version => {

@@ -52,6 +52,23 @@ export function renderCamera(camera) {
     if ($('#bowl-full').open && full.getAttribute('src') !== camera.src) full.src = camera.src;
 }
 
+// The full picture. `jump` ({ date, minute }) opens the history at that
+// meal instead of "now": the Last 7 Days list's "See the bowl"
+export function openBowl(jump = null) {
+    const dialog = $('#bowl-full');
+    // Loaded on first open, from the browser's copy of the cropped view
+    $('#bowl-full-frame').src = $('#bowl-frame').getAttribute('src');
+    if (lastCamera) {
+        $('#bowl-full-when').textContent = lastCamera.label;
+        $('#bowl-full-frame').alt = lastCamera.alt;
+    }
+    openHistory(jump);
+    // Native <dialog>: focus trap, Esc, and focus back on what opened it at close
+    dialog.showModal();
+}
+
+export const hasCamera = () => Boolean(lastCamera && lastCamera.src);
+
 export function initCamera() {
     for (const type of ['pointerdown', 'keydown']) {
         document.addEventListener(type, () => {
@@ -61,17 +78,7 @@ export function initCamera() {
         }, { passive: true, capture: true });
     }
     const dialog = $('#bowl-full');
-    $('#bowl-open').addEventListener('click', () => {
-        // Loaded on first open, from the browser's copy of the cropped view
-        $('#bowl-full-frame').src = $('#bowl-frame').getAttribute('src');
-        if (lastCamera) {
-            $('#bowl-full-when').textContent = lastCamera.label;
-            $('#bowl-full-frame').alt = lastCamera.alt;
-        }
-        openHistory();
-        // Native <dialog>: focus trap, Esc, and focus back on the picture at close
-        dialog.showModal();
-    });
+    $('#bowl-open').addEventListener('click', () => openBowl());
     $('#bowl-close').addEventListener('click', () => dialog.close());
     // A tap on the backdrop lands on the dialog element itself
     dialog.addEventListener('click', e => { if (e.target === dialog) dialog.close(); });

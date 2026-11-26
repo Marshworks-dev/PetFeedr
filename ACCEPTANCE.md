@@ -1,6 +1,6 @@
 # Bowl history: past pictures on a timeline with the feeds and what the camera read
 
-Status: approved
+Status: shipped
 
 Intent: The bowl picture stops being only "now". In the full-picture
 dialog you can scrub back through the day and step back up to 7 days.
@@ -67,7 +67,8 @@ Dashboard
       before the 5:30 feed, camera read empty"); Before, Watch and 30 min
       after say which feed.
 - [test] At least one unhappy-path test per new route. All tests pass.
-- [check] Light and dark, 320–390 px, on the phone (OWED).
+- [check] Light and dark, 320–390 px, on the phone (not yet run at ship:
+      checked in a 320/390 px browser and on the tailnet test server)
 
 ## Out of scope
 

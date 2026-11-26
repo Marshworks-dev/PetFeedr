@@ -3467,6 +3467,7 @@ class TestBowlHistory(CameraCase):
             {'ts': f'{d}T09:00:00', 'kind': 'after', 'feed': f'{d}T083001',
              'frame': f'{d}T090000.jpg', 'view': 'clear', 'bowl': 'food'},
             {'ts': f'{d}T10:00:00', 'kind': 'camera', 'view': 'blocked', 'alert': 'sent'},
+            {'ts': f'{d}T10:05:00<b>', 'kind': 'camera', 'view': 'dark', 'alert': 'sent'},   # odd ts: dropped
         ]
         self._write_readings(self.readings)
 
@@ -3490,7 +3491,7 @@ class TestBowlHistory(CameraCase):
         self.assertEqual(data['frames'], [f'{d}T082500.jpg', f'{d}T083000.jpg', f'{d}T090000.jpg'])
         self.assertEqual([f['event'] for f in data['feeds']], ['dispense', 'missed'])
         meal = data['feeds'][0]
-        self.assertEqual(meal['clip'], f'{d}T083001')
+        self.assertEqual(meal['clip'], {'id': f'{d}T083001', 'frames': 2, 'landed': 1})
         self.assertEqual(meal['before'], {'view': 'clear', 'bowl': 'empty',
                                           'picture': {'clip': f'{d}T083001', 'index': 0}})
         self.assertEqual(meal['after'], {'view': 'clear', 'bowl': 'food',

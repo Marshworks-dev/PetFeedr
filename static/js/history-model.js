@@ -102,20 +102,90 @@ export function clock(minutes) {
 
 const FEED_WORDS = { fed: 'feed', manual: 'extra feed', pulse: 'graze pulse', missed: 'missed feed', failed: 'failed feed' };
 
-// What the slider says: "Tue 5:25 PM, 5 min before the 5:30 PM feed"
-export function valueText(dayLabel, frameMinute, marks) {
-    let text = `${dayLabel} ${clock(frameMinute)}`;
+export const feedName = mark => `${clock(mark.minutes)} ${FEED_WORDS[mark.kind]}`;
+
+// The feed mark closest to a slider position, within an hour, or null
+export function nearestFeed(marks, minute, within = FEED_NEAR_MINUTES) {
     let near = null;
     for (const mark of marks || []) {
-        const gap = Math.abs(mark.minutes - frameMinute);
-        if (gap <= FEED_NEAR_MINUTES && (!near || gap < Math.abs(near.minutes - frameMinute))) near = mark;
+        const gap = Math.abs(mark.minutes - minute);
+        if (gap <= within && (!near || gap < Math.abs(near.minutes - minute))) near = mark;
     }
+    return near;
+}
+
+const FRAME_READ = { empty: 'camera read empty', food: 'camera read food in the bowl' };
+const FRAME_BLIND = { dark: "camera couldn't see", blocked: "camera couldn't see" };
+
+// What the slider says: "Tue 5:25 PM, 5 min before the 5:30 PM feed, camera read empty"
+export function valueText(dayLabel, frameMinute, marks, reading = null) {
+    let text = `${dayLabel} ${clock(frameMinute)}`;
+    const near = nearestFeed(marks, frameMinute);
     if (near) {
         const diff = Math.round(near.minutes - frameMinute);
-        const what = `the ${clock(near.minutes)} ${FEED_WORDS[near.kind]}`;
+        const what = `the ${feedName(near)}`;
         text += diff === 0 ? `, at ${what}` : diff > 0 ? `, ${diff} min before ${what}` : `, ${-diff} min after ${what}`;
     }
+    const read = reading && (FRAME_BLIND[reading.view] || FRAME_READ[reading.bowl]);
+    if (read) text += `, ${read}`;
     return text;
+}
+
+// A meal: a dispense that isn't part of a graze. Only meals get bowl readings
+export const isMeal = mark => mark.kind === 'fed' || mark.kind === 'manual';
+
+const BEFORE_WORDS = { empty: 'empty before', food: 'food still there before', unknown: "couldn't tell before" };
+const AFTER_WORDS = { empty: 'empty 30 min after', food: 'food left 30 min after', unknown: "couldn't tell 30 min after" };
+// After this long with no 30-min reading, none is coming
+const AFTER_DUE_MINUTES = 60;
+
+// A meal's bowl readings in words, or null when there are none:
+// "Camera read: empty before · food left 30 min after"
+export function readingWords(mark, minutesSinceFeed = Infinity) {
+    if (!isMeal(mark)) return null;
+    const { before, after } = mark.feed;
+    const parts = [];
+    if (before) parts.push(BEFORE_WORDS[before.bowl] || BEFORE_WORDS.unknown);
+    if (after) parts.push(AFTER_WORDS[after.bowl] || AFTER_WORDS.unknown);
+    else if (before && minutesSinceFeed < AFTER_DUE_MINUTES) parts.push('30-min look still to come');
+    return parts.length ? `Camera read: ${parts.join(' · ')}` : null;
+}
+
+// Marks a meal on the bar: food left after 30 min, or still there before it
+export function mealFlag(mark) {
+    if (!isMeal(mark)) return null;
+    if (mark.feed.after?.bowl === 'food') return 'uneaten';
+    if (mark.feed.before?.bowl === 'food') return 'leftover';
+    return null;
+}
+
+// Where Before jumps: the clip frame the before reading used, else the last
+// saved frame ahead of the feed. { clip, index } | { frame } | null
+export function beforeTarget(mark, frames) {
+    const picture = mark.feed.before?.picture;
+    if (picture?.clip) return { clip: picture.clip, index: picture.index };
+    let found = null;
+    for (const name of frames) {
+        const at = frameMinutes(name);
+        if (at !== null && at < mark.minutes) found = name;
+    }
+    return found ? { frame: found } : null;
+}
+
+// Where "30 min after" jumps: the frame the after reading used (it can be
+// the next day's), else the first saved frame 30 min on. { frame } | null
+export function afterTarget(mark, frames) {
+    const picture = mark.feed.after?.picture;
+    if (picture?.frame) return { frame: picture.frame };
+    const found = frames.find(name => frameMinutes(name) >= mark.minutes + 30);
+    return found ? { frame: found } : null;
+}
+
+// "5:30 PM" (the Last 7 Days list) to minutes into the day, or null
+export function parseClock(text) {
+    const m = /^(\d{1,2}):(\d{2}) (AM|PM)$/.exec(text || '');
+    if (!m) return null;
+    return (Number(m[1]) % 12 + (m[3] === 'PM' ? 12 : 0)) * 60 + Number(m[2]);
 }
 
 // Calls fn with the latest value once calls have stopped for `ms`. A new
