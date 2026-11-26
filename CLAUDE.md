@@ -34,12 +34,14 @@ hopper.py                 # Hopper level tracking; learns capacity from refill f
 notify.py                 # Pushover alerts (PUSHOVER_TOKEN/PUSHOVER_USER env; fail-soft)
 passcode.py               # Household passcode: hash + unlock tokens in data/passcode.json, growing waits on wrong guesses
 lock_routes.py            # Blueprint: /unlock, /lock, /passcode, and the gate in front of every write
-camera.py                 # Bowl webcam: one long-running ffmpeg stream; a frame every 5 min to data/frames/,
+camera.py                 # Bowl webcam: one long-running ffmpeg stream; a frame every 5 min to data/frames/
+                          #   (plus a 320 px preview in data/previews/ for the history timeline),
                           #   a clip of every dispense/graze pulse to data/clips/ (both 14 days)
 bowl_watch.py             # Reads saved frames/clips: blind-camera alert, bowl before/30 min after each
                           #   dispense (empty/food/unknown) to data/bowl_readings.jsonl; meal alerts
                           #   only with PETFEEDR_MEAL_ALERTS=on (default off)
 bowl_history.py           # One day of frames + feeds + bowl readings for the history timeline (read-only)
+backfill_previews.py      # One-off: 320 px previews (data/previews/) for frames saved before previews existed
 test_bowl_watch.py        # Its tests: frames drawn in code; PETFEEDR_REAL_FRAMES=<private dir> adds real ones
 servo_controller.py       # Motor control: portion sizes, dispense cycles, anti-jam agitation
 DRV8825.py                # GPIO abstraction; falls back to mock_gpio.py off-Pi only
@@ -84,7 +86,9 @@ Key invariants:
   call on the feed path. `/camera/clips/<id>/<n>.jpg` reaches a file only
   through `camera.clip_frame_path`, which checks both parts.
   `/camera/frame/<name>` reaches a file only through `camera.saved_frame_path`
-  (exact match against the folder listing). `bowl_history.py` builds the day
+  (exact match against the folder listing); `/camera/preview/<name>` only
+  through `camera.saved_preview_path` (listed in both folders). Previews are
+  made when a frame is saved, never by a GET. `bowl_history.py` builds the day
   view for `/api/camera/day/<date>`; it is off the feed path too.
 - **The camera stream is started once and left running.** This webcam jams
   when a stream starts after an earlier one stopped, so camera.py restarts

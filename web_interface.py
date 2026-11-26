@@ -166,6 +166,19 @@ def camera_saved_frame(name):
     return response
 
 
+@app.route('/camera/preview/<name>')
+def camera_frame_preview(name):
+    """The small copy of a saved frame, shown while the timeline is dragged.
+    Gated like the frames (every /camera/ read but the latest picture);
+    camera.saved_preview_path only answers for a name both folders list."""
+    path = camera.saved_preview_path(name)
+    if not path:
+        return error_response('No such preview', 404)
+    response = send_file(os.path.abspath(path), mimetype='image/jpeg')
+    response.headers['Cache-Control'] = 'private, max-age=86400, immutable'
+    return response
+
+
 @app.route('/api/camera/day/<date_str>')
 def camera_day(date_str):
     """One day of the bowl history: frames, feeds with their clips and bowl

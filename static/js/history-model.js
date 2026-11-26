@@ -261,6 +261,16 @@ export function frameLoader() {
     };
 }
 
+// The order a day's previews are fetched in: nearest the slider first, so
+// the stretch you're about to drag through is ready soonest
+export function previewOrder(previews, minute) {
+    return (previews || [])
+        .map(name => ({ name, gap: Math.abs((frameMinutes(name) ?? Infinity) - minute) }))
+        .filter(p => Number.isFinite(p.gap))
+        .sort((a, b) => a.gap - b.gap)
+        .map(p => p.name);
+}
+
 // What to do with the <img> to get `src` up: 'none' when it's already
 // there or on its way, 'set' for a new address, 'retry' when the same
 // address already failed (re-setting an identical src loads nothing, so

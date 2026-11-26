@@ -36,10 +36,10 @@ ssh $SSH_OPTS -o ControlMaster=yes -fN "$PI_HOST"
 TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")
 BACKUP_PATH="$BACKUP_DIR/petfeedr_backup_$TIMESTAMP"
 echo "💾 Backing up current Pi installation..."
-# Camera frames and feed clips stay out: two weeks of them is hundreds of MB per backup,
+# Camera frames, their previews and feed clips stay out: two weeks of them is hundreds of MB per backup,
 # and they are a rolling record, not state a restore needs. The passcode
 # file stays out too: a four-digit code's hash is no secret once copied
-if rsync -az -e "ssh $SSH_OPTS" --exclude 'venv/' --exclude 'data/frames/' --exclude 'data/clips/' --exclude 'data/passcode.json' "$PI_HOST:$PI_PATH/" "$BACKUP_PATH/" 2>/dev/null; then
+if rsync -az -e "ssh $SSH_OPTS" --exclude 'venv/' --exclude 'data/frames/' --exclude 'data/clips/' --exclude 'data/previews/' --exclude 'data/passcode.json' "$PI_HOST:$PI_PATH/" "$BACKUP_PATH/" 2>/dev/null; then
     echo "   Backup saved to: $BACKUP_PATH"
     
     # Keep only the last 10 backups (use subshell to avoid changing directory)
