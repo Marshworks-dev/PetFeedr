@@ -30,6 +30,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 
+import bowl_watch
 from DRV8825 import on_raspberry_pi
 from events import EVENTS_FILE
 
@@ -290,20 +291,26 @@ def snap(failing, now=None):
     An unplugged webcam fails every 5 minutes; the log gets one warning when
     the outage starts and one line when it ends, not 288 a day.
     """
+    now = now or datetime.now()
     try:
-        save_frame(_fresh_frame(), now)
+        frame = _fresh_frame()
+        path = save_frame(frame, now)
         prune(now)
     except (CameraError, OSError) as e:
         if not failing:
             log.warning(f"Camera offline: {e} — feeding is unaffected; retrying quietly")
+        bowl_watch.WATCH.frame_missing(now.timestamp())
         return True
     except Exception:
         # A bug, not an outage: keep the traceback, still only once
         if not failing:
             log.exception("Camera capture failed unexpectedly — feeding is unaffected")
+        bowl_watch.WATCH.frame_missing(now.timestamp())
         return True
     if failing:
         log.info("Camera is back")
+    # Never raises: a misread bowl can't stop the next shot
+    bowl_watch.WATCH.frame_saved(os.path.basename(path), frame, now.timestamp())
     return False
 
 
@@ -452,16 +459,17 @@ class ClipWatcher:
         for event in self._new_events():
             window = clip_window(event)
             if window:
-                self._pending.append((window[1] + 1, clip_id_for(event['ts']), window))
+                self._pending.append((window[1] + 1, clip_id_for(event['ts']), window,
+                                      event.get('event') == 'dispense'))
         due = [p for p in self._pending if p[0] <= now]
         self._pending = [p for p in self._pending if p[0] > now]
         saved = []
-        for _, clip_id, (start, end, landed_at) in due:
-            if self._cut(clip_id, start, end, landed_at):
+        for _, clip_id, (start, end, landed_at), dispense in due:
+            if self._cut(clip_id, start, end, landed_at, dispense):
                 saved.append(clip_id)
         return saved
 
-    def _cut(self, clip_id, start, end, landed_at):
+    def _cut(self, clip_id, start, end, landed_at, dispense=False):
         stream = _stream
         frames = stream.frames_between(start, end) if stream else []
         try:
@@ -475,6 +483,11 @@ class ClipWatcher:
             self._failing = True
             return False
         self._failing = False
+        # A dispense's clip holds the bowl just before the food landed: the
+        # "before" reading. Graze pulses get none (a graze is one meal over
+        # 30 min, not one per pulse). Never raises
+        if dispense:
+            bowl_watch.WATCH.clip_saved(clip_id, frames, landed_at)
         return True
 
 

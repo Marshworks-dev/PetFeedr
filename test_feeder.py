@@ -2310,7 +2310,9 @@ class CameraCase(TempCwd):
                   patch.object(camera, '_stream', None),
                   patch.object(camera, '_MIN_FRAME_BYTES', 0),   # the test frame is a few bytes
                   # No test starts a real ffmpeg
-                  patch.object(camera, '_spawn', side_effect=AssertionError("no camera set up"))):
+                  patch.object(camera, '_spawn', side_effect=AssertionError("no camera set up")),
+                  # Bowl readings have their own tests; here they'd decode the fake frames
+                  patch.object(camera.bowl_watch, 'WATCH', MagicMock())):
             p.start()
             self.addCleanup(p.stop)
         self.addCleanup(lambda: [c.close() for c in self.spawned])
@@ -2513,11 +2515,14 @@ class TestCamera(CameraCase):
     def test_camera_code_is_apart_from_the_feed_path(self):
         from pathlib import Path
         repo = Path(self.camera.__file__).parent
-        source = (repo / 'camera.py').read_text()
-        self.assertNotIn('STATE_LOCK', source)
-        self.assertNotIn('feeder_core', source)
+        for module in ('camera.py', 'bowl_watch.py'):
+            source = (repo / module).read_text()
+            self.assertNotIn('STATE_LOCK', source, module)
+            self.assertNotIn('feeder_core', source, module)
         for feed_module in ('feeder_core.py', 'servo_controller.py', 'schedule_routes.py', 'hopper.py'):
-            self.assertNotIn('camera', (repo / feed_module).read_text(), feed_module)
+            source = (repo / feed_module).read_text()
+            self.assertNotIn('camera', source, feed_module)
+            self.assertNotIn('bowl_watch', source, feed_module)
 
 
 class TestMicOff(unittest.TestCase):
