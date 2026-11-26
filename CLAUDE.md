@@ -36,6 +36,10 @@ passcode.py               # Household passcode: hash + unlock tokens in data/pas
 lock_routes.py            # Blueprint: /unlock, /lock, /passcode, and the gate in front of every write
 camera.py                 # Bowl webcam: one long-running ffmpeg stream; a frame every 5 min to data/frames/,
                           #   a clip of every dispense/graze pulse to data/clips/ (both 14 days)
+bowl_watch.py             # Reads saved frames/clips: blind-camera alert, bowl before/30 min after each
+                          #   dispense (empty/food/unknown) to data/bowl_readings.jsonl; meal alerts
+                          #   only with PETFEEDR_MEAL_ALERTS=on (default off)
+test_bowl_watch.py        # Its tests: frames drawn in code; PETFEEDR_REAL_FRAMES=<private dir> adds real ones
 servo_controller.py       # Motor control: portion sizes, dispense cycles, anti-jam agitation
 DRV8825.py                # GPIO abstraction; falls back to mock_gpio.py off-Pi only
 mock_gpio.py              # Simulation stub for RPi.GPIO
@@ -71,9 +75,10 @@ Key invariants:
   forward at NTP sync, which would otherwise re-fire a fed slot. Startup
   also holds the scheduler for that sync (`wait_for_clock_sync`, 10 min cap).
 - **On a real Pi, a missing RPi.GPIO is fatal**, not simulation (DRV8825.load_gpio).
-- **The camera stays off the feed path.** camera.py never takes
-  `STATE_LOCK` or imports feeder_core, and no feed module imports it
-  (a test pins both). `/camera/latest.jpg` takes no filename from the request.
+- **The camera stays off the feed path.** camera.py and bowl_watch.py never
+  take `STATE_LOCK` or import feeder_core, and no feed module imports them
+  (a test pins both). bowl_watch's entry points never raise into the camera.
+  No camera pictures are committed: tests draw their frames. `/camera/latest.jpg` takes no filename from the request.
   Clips come from camera.py watching `feeding_events.jsonl`, never from a
   call on the feed path. `/camera/clips/<id>/<n>.jpg` reaches a file only
   through `camera.clip_frame_path`, which checks both parts.
