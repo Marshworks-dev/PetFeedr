@@ -5,6 +5,7 @@
 // reader.
 
 import { $ } from '../dom.js';
+import { openHistory, browsingHistory } from './history.js';
 
 // A screen left open and untouched stops fetching new pictures after this
 // long (each is about 70 KB); the next touch or key press brings it back
@@ -42,7 +43,9 @@ export function renderCamera(camera) {
     chip.dataset.when = camera.label;
     chip.classList.toggle('is-offline', !camera.online);
 
-    // The open dialog follows along when a new frame lands
+    // The open dialog follows along when a new frame lands, unless it is
+    // showing an earlier picture from the history bar
+    if (browsingHistory()) return;
     $('#bowl-full-when').textContent = camera.label;
     const full = $('#bowl-full-frame');
     full.alt = camera.alt;
@@ -61,6 +64,11 @@ export function initCamera() {
     $('#bowl-open').addEventListener('click', () => {
         // Loaded on first open, from the browser's copy of the cropped view
         $('#bowl-full-frame').src = $('#bowl-frame').getAttribute('src');
+        if (lastCamera) {
+            $('#bowl-full-when').textContent = lastCamera.label;
+            $('#bowl-full-frame').alt = lastCamera.alt;
+        }
+        openHistory();
         // Native <dialog>: focus trap, Esc, and focus back on the picture at close
         dialog.showModal();
     });

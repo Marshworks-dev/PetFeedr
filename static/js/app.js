@@ -15,6 +15,7 @@ import { initHopper, renderHopper } from './cards/hopper.js';
 import { initFeedPanel } from './cards/feedpanel.js';
 import { watchPours } from './pour.js';
 import { initCamera, renderCamera } from './cards/camera.js';
+import { initHistory, renderHistoryLock } from './cards/history.js';
 import { initClips, renderClips, clipPlayerOpen } from './cards/clips.js';
 import { initLock, renderLock } from './cards/lock.js';
 import { initSheet, renderSheet } from './cards/sheet.js';
@@ -78,6 +79,7 @@ function registerCards() {
     // After the timeline, so the active dot it reads is current
     register(s => s.timeline, renderClips);
     register(s => s.lock, renderLock);
+    register(s => s.lock, renderHistoryLock);
     register(s => s.schedule, renderSheet);
     register(s => ({ app: s.app, lastFed: s.last_fed }), renderFooter);
     register(s => s.asset_version, version => {
@@ -97,6 +99,7 @@ function start() {
     initHopper();
     initFeedPanel();
     initCamera();
+    initHistory();
     initClips();  // after initTimeline: its dot handler runs first
     initSheet(initial);
     registerCards();

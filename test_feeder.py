@@ -3643,3 +3643,22 @@ class TestCameraHistoryGate(PasscodeCase):
                 self.assertNotEqual(status, 401, url)
             else:
                 self.assertEqual(status, 401, url)
+
+
+class TestHistoryModelJS(unittest.TestCase):
+    """The bowl history's front-end arithmetic has node:test tests
+    (test_history.mjs); this runs them, so one unittest run covers both."""
+
+    def test_node_tests_pass(self):
+        import shutil
+        import subprocess
+        node = shutil.which('node')
+        if not node:
+            # CI must run them; a box without node (the Pi) skips
+            if os.environ.get('CI'):
+                self.fail('node is not installed on CI')
+            self.skipTest('node not installed')
+        here = os.path.dirname(os.path.abspath(__file__))
+        run = subprocess.run([node, '--test', 'test_history.mjs'], cwd=here,
+                             capture_output=True, text=True, timeout=60)
+        self.assertEqual(run.returncode, 0, run.stdout[-3000:] + run.stderr[-2000:])

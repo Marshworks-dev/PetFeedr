@@ -27,7 +27,7 @@
              cache-first copy can't pair last release's CSS with this page -->
         <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css', v=asset_version) }}">
         <!-- Fetch every module in parallel instead of discovering imports one hop at a time -->
-        {% for mod in ['app', 'dom', 'api', 'store', 'toast', 'theme', 'ticker', 'cards/next', 'cards/timeline', 'cards/feed', 'cards/stats', 'cards/hopper', 'cards/camera', 'cards/clips', 'cards/lock', 'cards/sheet', 'cards/footer'] %}
+        {% for mod in ['app', 'dom', 'api', 'store', 'toast', 'theme', 'ticker', 'cards/next', 'cards/timeline', 'cards/feed', 'cards/stats', 'cards/hopper', 'cards/camera', 'cards/history', 'history-model', 'cards/clips', 'cards/lock', 'cards/sheet', 'cards/footer'] %}
         <link rel="modulepreload" href="{{ url_for('static', filename='js/' ~ mod ~ '.js') }}">
         {% endfor %}
         <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
@@ -206,6 +206,19 @@
                 <button type="button" class="bowl-close" id="bowl-close" aria-label="Close picture">×</button>
             </div>
             <img id="bowl-full-frame" alt="" width="1280" height="720">
+            {# Earlier pictures on a 24h bar (cards/history.js); filled only on an unlocked device #}
+            <div class="history" id="history" hidden>
+                <div class="history-days" id="history-days" role="group" aria-label="Day"></div>
+                <div class="history-track">
+                    <div class="history-marks" id="history-marks" aria-hidden="true"></div>
+                    <input type="range" class="history-scrub" id="history-scrub" min="0" max="1435" step="5" value="1435" aria-label="Time of day">
+                </div>
+                <div class="history-hours" aria-hidden="true"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>12a</span></div>
+                <p class="history-status" id="history-status"></p>
+            </div>
+            <p class="history-locked" id="history-locked" hidden>
+                <button type="button" class="history-unlock" id="history-unlock">Unlock to see earlier pictures</button>
+            </p>
         </dialog>
 
         <!-- A feed's clip as a flipbook (cards/clips.js) -->
