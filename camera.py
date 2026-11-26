@@ -37,6 +37,10 @@ from events import EVENTS_FILE
 log = logging.getLogger('petfeedr')
 
 FRAMES_DIR = os.path.join('data', 'frames')
+# A small copy of each frame, same name, so the history timeline can show a
+# picture the moment a drag reaches it (the full frame follows when it stops)
+PREVIEWS_DIR = os.path.join('data', 'previews')
+PREVIEW_WIDTH = 320
 DEVICE = os.environ.get('PETFEEDR_CAMERA', '/dev/video0')
 INTERVAL_S = 300
 # Shots land this far ahead of each 5-minute mark, so an on-the-dot feed
@@ -94,6 +98,10 @@ _wall = time.time  # clips are matched to journal times, which are wall-clock
 
 class CameraError(Exception):
     """No frame to save; the message is the short reason."""
+
+
+class PreviewError(Exception):
+    """A preview couldn't be made; the frame itself is fine."""
 
 
 def enabled():
@@ -246,13 +254,90 @@ def save_frame(frame, now=None):
     return path
 
 
-def frame_names():
-    """Frame file names, oldest first. Anything else in the folder is ignored."""
+def _listed(folder):
     try:
-        names = os.listdir(FRAMES_DIR)
+        names = os.listdir(folder)
     except FileNotFoundError:
         return []
     return sorted(n for n in names if _NAME_RE.match(n))
+
+
+def frame_names():
+    """Frame file names, oldest first. Anything else in the folder is ignored."""
+    return _listed(FRAMES_DIR)
+
+
+def preview_names():
+    """Names of frames that have a preview, oldest first."""
+    return _listed(PREVIEWS_DIR)
+
+
+def shrink(jpeg):
+    """A PREVIEW_WIDTH-wide JPEG of a frame, made by ffmpeg from the saved
+    bytes (never the webcam: the stream stays the only thing that opens it)."""
+    argv = ['ffmpeg', '-hide_banner', '-loglevel', 'error', '-nostdin',
+            '-f', 'mjpeg', '-i', '-',
+            '-vf', f'scale={PREVIEW_WIDTH}:-2', '-q:v', '6',
+            '-frames:v', '1', '-f', 'mjpeg', '-']
+    try:
+        out = subprocess.run(argv, input=jpeg, capture_output=True, timeout=20).stdout
+    except (OSError, subprocess.TimeoutExpired) as e:
+        raise PreviewError(f"ffmpeg couldn't run: {e}") from e
+    if not out.startswith(_JPEG_MAGIC):
+        raise PreviewError("ffmpeg gave no preview")
+    return out
+
+
+def save_preview(name, jpeg):
+    """Write the preview for the frame called `name` (a frame name we made)."""
+    if not _NAME_RE.match(name):
+        raise PreviewError(f"not a frame name: {name!r}")
+    small = shrink(jpeg)
+    os.makedirs(PREVIEWS_DIR, exist_ok=True)
+    path = os.path.join(PREVIEWS_DIR, name)
+    # Temp + rename, like the frames: a half-written preview is never served
+    tmp = path + '.part'
+    with open(tmp, 'wb') as f:
+        f.write(small)
+    os.replace(tmp, path)
+    return path
+
+
+_preview_failing = False
+
+
+def _preview_quietly(name, jpeg):
+    """Make a frame's preview; never raises. A failure logs once until one works."""
+    global _preview_failing
+    try:
+        save_preview(name, jpeg)
+    except Exception as e:
+        if not _preview_failing:
+            log.warning(f"Camera preview not made ({e}); the frame is saved, the timeline loads it in full")
+        _preview_failing = True
+        return False
+    if _preview_failing:
+        log.info("Camera previews are being made again")
+    _preview_failing = False
+    return True
+
+
+def backfill_previews():
+    """Make previews for saved frames that have none. Returns (made, failed).
+    Frames that already have one are skipped, so a second run does nothing."""
+    have = set(preview_names())
+    made = failed = 0
+    for name in frame_names():
+        if name in have:
+            continue
+        try:
+            with open(os.path.join(FRAMES_DIR, name), 'rb') as f:
+                save_preview(name, f.read())
+            made += 1
+        except (PreviewError, OSError) as e:
+            log.warning(f"No preview for {name}: {e}")
+            failed += 1
+    return made, failed
 
 
 def saved_frame_path(name):
@@ -261,6 +346,15 @@ def saved_frame_path(name):
     from a request reaches the filesystem unchecked."""
     listed = next((n for n in frame_names() if n == name), None)
     return os.path.join(FRAMES_DIR, listed) if listed else None
+
+
+def saved_preview_path(name):
+    """The preview file for a saved frame, or None. Same rule as
+    saved_frame_path: the name must be one both folders list."""
+    if not saved_frame_path(name):
+        return None
+    listed = next((n for n in preview_names() if n == name), None)
+    return os.path.join(PREVIEWS_DIR, listed) if listed else None
 
 
 def latest_frame():
@@ -286,6 +380,9 @@ def prune(now=None):
     old = [n for n in frame_names() if n < cutoff]
     for name in old:
         os.remove(os.path.join(FRAMES_DIR, name))
+    old_previews = [n for n in preview_names() if n < cutoff]
+    for name in old_previews:
+        os.remove(os.path.join(PREVIEWS_DIR, name))
     # A clip's name is a frame name without the .jpg, so the same cutoff sorts it
     old_clips = [c for c in clip_ids() if c < cutoff]
     for clip_id in old_clips:
@@ -304,6 +401,7 @@ def snap(failing, now=None):
         frame = _fresh_frame()
         path = save_frame(frame, now)
         prune(now)
+        _preview_quietly(os.path.basename(path), frame)
     except (CameraError, OSError) as e:
         if not failing:
             log.warning(f"Camera offline: {e} — feeding is unaffected; retrying quietly")

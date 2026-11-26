@@ -7,7 +7,9 @@
 // Past pictures need this device unlocked (the server checks, lock_routes.py).
 // A locked device gets one line that opens the unlock prompt, and no request
 // for any earlier picture. One full frame is fetched per settled drag, never
-// one per frame passed over (history-model.js `settle`).
+// one per frame passed over (history-model.js `settle`). A small preview of
+// each frame (/camera/preview/) loads in the background when a day opens, so
+// a drag shows a picture at once; the full frame replaces it once it stops.
 
 import { $, html, setHTML } from '../dom.js';
 import { getState } from '../store.js';
@@ -17,6 +19,7 @@ import {
     DAY_MINUTES, STEP_MINUTES, frameMinutes, tsMinutes, nearestFrame, feedMarks,
     blindStretches, valueText, settle, recentDays, clock, pct, nearestFeed, feedName,
     isMeal, readingWords, mealFlag, beforeTarget, afterTarget, feedActions, frameLoader, imgStep, stepFeed,
+    previewOrder,
 } from '../history-model.js';
 
 const BLIND_WORDS = { dark: 'dark', blocked: 'lens covered', offline: 'no picture' };
@@ -34,12 +37,37 @@ let feed = null;        // the feed mark the panel shows
 // until the one the slider points at has arrived
 const loader = frameLoader();
 let loadingLabel = '';
+// A preview is up while the full picture loads: shown undimmed, the badge
+// still says Loading, so it never passes for the final picture
+let previewUp = false;
 
 const frameSrc = name => `/camera/frame/${encodeURIComponent(name)}`;
+const previewSrc = name => `/camera/preview/${encodeURIComponent(name)}`;
+
+// Previews fetched so far (frame names), kept while the dialog is open
+const previewsReady = new Set();
+// A few at a time, so a full picture never queues behind a day of previews
+const PREVIEW_FETCHES = 2;
+let previewRun = 0;
+
+function prefetchPreviews(names) {
+    const run = ++previewRun;
+    const queue = previewOrder(names, minute).filter(n => !previewsReady.has(n));
+    const next = () => {
+        if (run !== previewRun || !queue.length) return;
+        const name = queue.shift();
+        const img = new Image();
+        img.onload = () => { previewsReady.add(name); next(); };
+        // A missing preview just means that frame loads in full, as before
+        img.onerror = next;
+        img.src = previewSrc(name);
+    };
+    for (let i = 0; i < PREVIEW_FETCHES; i++) next();
+}
 
 function renderLoad() {
     const state = loader.state;
-    $('#bowl-full-frame').classList.toggle('is-loading', state === 'loading');
+    $('#bowl-full-frame').classList.toggle('is-loading', state === 'loading' && !previewUp);
     const badge = $('#frame-state');
     badge.hidden = state === 'shown';
     badge.textContent = state === 'failed' ? `Couldn't load ${loadingLabel}` : `Loading ${loadingLabel}…`;
@@ -71,8 +99,16 @@ const showFrame = settle(src => {
 
 function showSrc(src, label) {
     showFrame.cancel();
+    previewUp = false;
     want(src, label);
     setImg(src);
+}
+
+// While the full frame is on its way, put up its preview if one has loaded
+function showPreview(name) {
+    previewUp = loader.state === 'loading' && previewsReady.has(name);
+    if (previewUp) $('#bowl-full-frame').src = previewSrc(name);
+    renderLoad();
 }
 
 // The dialog is showing an earlier picture: camera.js stops swapping in new ones
@@ -176,6 +212,7 @@ function pick() {
     // The slider's own text value carries the full sentence for screen readers
     status('');
     want(frameSrc(name), clock(at));
+    showPreview(name);
     showFrame(frameSrc(name));
 }
 
@@ -257,6 +294,7 @@ async function load(date, { keepTime = true, then = null } = {}) {
         marks: feedMarks(data.feeds),
         alerts: (data.camera_alerts || []).map(a => ({ minutes: tsMinutes(a.ts) })).filter(a => a.minutes !== null),
     };
+    const previews = data.previews || [];
     renderDays();
     renderMarks();
     if (!keepTime && view.frames.length) {
@@ -265,6 +303,7 @@ async function load(date, { keepTime = true, then = null } = {}) {
     }
     $('#history-scrub').value = minute;
     status(view.frames.length ? '' : 'No pictures saved this day');
+    prefetchPreviews(previews);
     pick();
     if (then) then();
 }
@@ -277,6 +316,7 @@ function setup(jump = null) {
     $('#bowl-full').classList.toggle('has-history', !locked);
     if (locked) {
         request++;           // drop any answer still on its way
+        previewRun++;
         showFrame.cancel();
         loader.reset();
         renderLoad();
@@ -312,6 +352,7 @@ export function openHistory(jump = null) {
     setHTML($('#history-marks'), html``);
     delete $('#history-feed').dataset.key;
     loader.reset();
+    previewUp = false;
     renderLoad();
     setup(jump);
 }
@@ -357,6 +398,8 @@ export function initHistory() {
     img.addEventListener('error', () => { if (loader.failed(img.getAttribute('src'))) renderLoad(); });
     $('#bowl-full').addEventListener('close', () => {
         request++;
+        previewRun++;
+        previewUp = false;
         showFrame.cancel();
         loader.reset();
         renderLoad();

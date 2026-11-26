@@ -250,3 +250,24 @@ test('‹ › step between feeds, or to the nearest one either side when none is
     assert.equal(stepFeed(marks, 900, null, 1), marks[2]);
     assert.equal(stepFeed([], 900, null, 1), null);
 });
+
+import { previewOrder } from './static/js/history-model.js';
+
+test("a preview showing never ends the wait: only the full picture does", () => {
+    const loader = frameLoader();
+    loader.want('/camera/frame/2026-11-26T103000.jpg');
+    // The preview lands in the same <img> first
+    assert.equal(loader.loaded('/camera/preview/2026-11-26T103000.jpg'), false);
+    assert.equal(loader.failed('/camera/preview/2026-11-26T103000.jpg'), false);
+    assert.equal(loader.state, 'loading');
+    assert.equal(loader.loaded('/camera/frame/2026-11-26T103000.jpg'), true);
+    assert.equal(loader.state, 'shown');
+});
+
+test('previews load nearest the slider first', () => {
+    const names = ['2026-11-26T080000.jpg', '2026-11-26T100000.jpg', '2026-11-26T103000.jpg',
+        '2026-11-26T120000.jpg', 'junk.jpg'];
+    assert.deepEqual(previewOrder(names, 10 * 60 + 25), [
+        '2026-11-26T103000.jpg', '2026-11-26T100000.jpg', '2026-11-26T120000.jpg', '2026-11-26T080000.jpg']);
+    assert.deepEqual(previewOrder(undefined, 0), []);
+});

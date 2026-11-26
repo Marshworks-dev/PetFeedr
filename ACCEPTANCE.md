@@ -1,6 +1,6 @@
 # Bowl history: small previews so dragging shows a picture straight away
 
-Status: approved
+Status: shipped
 
 Intent: When you drag the bowl history timeline, the picture for that spot
 shows straight away instead of after a wait. A small preview of every saved

@@ -170,9 +170,13 @@ def _feeds(day, by_feed):
 def day_view(day):
     """Everything the timeline needs for one day, oldest first throughout."""
     frame_readings, by_feed, alerts = _readings(day)
+    frames = _frames(day)
+    have = set(camera.preview_names())
     return {
         'date': day.isoformat(),
-        'frames': _frames(day),
+        'frames': frames,
+        # The frames with a small copy at /camera/preview/<name>
+        'previews': [name for name in frames if name in have],
         'feeds': _feeds(day, by_feed),
         'frame_readings': frame_readings,
         'camera_alerts': alerts,

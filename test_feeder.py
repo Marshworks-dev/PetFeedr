@@ -5,6 +5,8 @@ Run: python3 -m unittest
 
 import json
 import os
+import shutil
+import subprocess
 import tempfile
 import time
 import unittest
@@ -2312,7 +2314,10 @@ class CameraCase(TempCwd):
                   # No test starts a real ffmpeg
                   patch.object(camera, '_spawn', side_effect=AssertionError("no camera set up")),
                   # Bowl readings have their own tests; here they'd decode the fake frames
-                  patch.object(camera.bowl_watch, 'WATCH', MagicMock())):
+                  patch.object(camera.bowl_watch, 'WATCH', MagicMock()),
+                  # Previews have their own tests (TestFramePreviews); no real ffmpeg here
+                  patch.object(camera, 'shrink', side_effect=lambda jpeg: b'\xff\xd8 small'),
+                  patch.object(camera, '_preview_failing', False)):
             p.start()
             self.addCleanup(p.stop)
         self.addCleanup(lambda: [c.close() for c in self.spawned])
@@ -3587,13 +3592,153 @@ class TestBowlHistory(CameraCase):
         self.assertEqual(resp.status_code, 421)
 
 
+class TestFramePreviews(CameraCase):
+    """The small copy of each frame the timeline shows while it's dragged."""
+
+    def setUp(self):
+        import camera
+        self._real_shrink = camera.shrink   # CameraCase swaps in a fake
+        super().setUp()
+        import web_interface
+        self.client = web_interface.app.test_client()
+        self.now = datetime(2026, 11, 14, 12, 0, 0)
+
+    def test_each_shot_saves_a_preview_beside_its_frame(self):
+        with self._cameras(FakeCamera()):
+            self.assertFalse(self.camera.snap(False, self.now))
+        name = '2026-11-14T120000.jpg'
+        self.assertEqual(self.camera.frame_names(), [name])
+        self.assertEqual(self.camera.preview_names(), [name])
+        with open(os.path.join(self.camera.PREVIEWS_DIR, name), 'rb') as f:
+            self.assertEqual(f.read(), b'\xff\xd8 small')
+        self.assertEqual([n for n in os.listdir(self.camera.PREVIEWS_DIR) if n.endswith('.part')], [])
+
+    def test_a_preview_that_fails_never_stops_the_frame_and_logs_once(self):
+        with patch.object(self.camera, 'shrink', side_effect=self.camera.PreviewError("ffmpeg gave no preview")), \
+                self._cameras(FakeCamera()), self.assertLogs('petfeedr', 'INFO') as logs:
+            for minute in (0, 5, 10):
+                self.assertFalse(self.camera.snap(False, self.now + timedelta(minutes=minute)))
+        self.assertEqual(len(self.camera.frame_names()), 3)
+        self.assertEqual(self.camera.preview_names(), [])
+        self.assertEqual(sum('preview not made' in line for line in logs.output), 1)
+        # The bowl reading still ran for every frame
+        self.assertEqual(self.camera.bowl_watch.WATCH.frame_saved.call_count, 3)
+        # A crash in the preview code is caught the same way
+        with patch.object(self.camera, 'shrink', side_effect=RuntimeError("bug")):
+            self.assertFalse(self.camera._preview_quietly('2026-11-14T121500.jpg', b'x'))
+        with self.assertLogs('petfeedr', 'INFO') as logs:
+            self.assertTrue(self.camera._preview_quietly('2026-11-14T122000.jpg', b'x'))
+        self.assertIn('being made again', logs.output[0])
+
+    def test_previews_are_pruned_with_their_frames(self):
+        old = self._frame(self.now - timedelta(days=14, minutes=1))
+        kept = self._frame(self.now - timedelta(days=13))
+        for path in (old, kept):
+            self.camera.save_preview(os.path.basename(path), b'jpeg')
+        with open(os.path.join(self.camera.PREVIEWS_DIR, 'notes.txt'), 'w') as f:
+            f.write("not a preview")
+        self.camera.prune(self.now)
+        self.assertEqual(self.camera.preview_names(), [os.path.basename(kept)])
+        self.assertTrue(os.path.exists(os.path.join(self.camera.PREVIEWS_DIR, 'notes.txt')))
+
+    def test_save_preview_takes_only_a_frame_name(self):
+        for name in ('../feeding_schedules.txt', 'x.jpg', '2026-11-14T120000.jpg/../../a'):
+            with self.assertRaises(self.camera.PreviewError):
+                self.camera.save_preview(name, b'jpeg')
+        self.assertFalse(os.path.exists(self.camera.PREVIEWS_DIR))
+
+    def test_serves_a_preview_only_for_a_listed_frame_that_has_one(self):
+        with_preview = os.path.basename(self._frame(self.now))
+        without = os.path.basename(self._frame(self.now + timedelta(minutes=5)))
+        self.camera.save_preview(with_preview, b'jpeg')
+        # A preview whose frame is gone (pruned between listings) isn't served
+        orphan = '2026-11-14T113000.jpg'
+        self.camera.save_preview(orphan, b'jpeg')
+        resp = self.client.get(f'/camera/preview/{with_preview}')
+        self.assertEqual((resp.status_code, resp.mimetype, resp.data), (200, 'image/jpeg', b'\xff\xd8 small'))
+        self.assertIn('private', resp.headers['Cache-Control'])
+        resp.close()
+        with open('feeding_schedules.txt', 'w') as f:
+            f.write("08:00,small\n")
+        for path in (f'/camera/preview/{without}', f'/camera/preview/{orphan}',
+                     f'/camera/preview/{with_preview}.part',
+                     '/camera/preview/..%2f..%2ffeeding_schedules.txt',
+                     '/camera/preview/../../feeding_schedules.txt',
+                     '/camera/preview/'):
+            self.assertEqual(self.client.get(path).status_code, 404, path)
+        self.assertEqual(self.client.post(f'/camera/preview/{with_preview}').status_code, 405)
+
+    def test_serving_a_preview_writes_nothing(self):
+        name = os.path.basename(self._frame(self.now))
+        missing = os.path.basename(self._frame(self.now + timedelta(minutes=5)))
+        self.camera.save_preview(name, b'jpeg')
+        self.camera.shrink.reset_mock()
+        before = sorted(os.listdir('.')), self.camera.preview_names()
+        resp = self.client.get(f'/camera/preview/{name}')
+        self.assertEqual(resp.status_code, 200)
+        resp.close()
+        # A frame with no preview gets a 404, never one made on the spot
+        self.assertEqual(self.client.get(f'/camera/preview/{missing}').status_code, 404)
+        self.assertEqual((sorted(os.listdir('.')), self.camera.preview_names()), before)
+        self.camera.shrink.assert_not_called()
+
+    def test_the_day_view_lists_which_frames_have_previews(self):
+        import bowl_history
+        a = os.path.basename(self._frame(datetime.combine(date.today(), datetime.min.time()) + timedelta(hours=8)))
+        b = os.path.basename(self._frame(datetime.combine(date.today(), datetime.min.time()) + timedelta(hours=9)))
+        self.camera.save_preview(b, b'jpeg')
+        view = bowl_history.day_view(date.today())
+        self.assertEqual((view['frames'], view['previews']), ([a, b], [b]))
+
+    def test_backfill_makes_missing_previews_once(self):
+        frames = [os.path.basename(self._frame(self.now + timedelta(minutes=m))) for m in (0, 5, 10)]
+        self.camera.save_preview(frames[0], b'jpeg')
+        self.camera.shrink.reset_mock()
+        self.assertEqual(self.camera.backfill_previews(), (2, 0))
+        self.assertEqual(self.camera.shrink.call_count, 2)
+        self.assertEqual(self.camera.preview_names(), frames)
+        self.assertEqual(self.camera.backfill_previews(), (0, 0))   # second run: nothing to do
+        self.assertEqual(self.camera.shrink.call_count, 2)
+        # Frames are only read, never changed
+        for name in frames:
+            with open(os.path.join(self.camera.FRAMES_DIR, name), 'rb') as f:
+                self.assertEqual(f.read(), JPEG)
+
+    def test_backfill_counts_a_frame_it_cannot_shrink_and_carries_on(self):
+        frames = [os.path.basename(self._frame(self.now + timedelta(minutes=m))) for m in (0, 5)]
+        calls = iter([self.camera.PreviewError("ffmpeg gave no preview"), b'\xff\xd8 small'])
+
+        def shrink(jpeg):
+            nxt = next(calls)
+            if isinstance(nxt, Exception):
+                raise nxt
+            return nxt
+
+        with patch.object(self.camera, 'shrink', side_effect=shrink), self.assertLogs('petfeedr', 'WARNING'):
+            self.assertEqual(self.camera.backfill_previews(), (1, 1))
+        self.assertEqual(self.camera.preview_names(), [frames[1]])
+
+    @unittest.skipUnless(shutil.which('ffmpeg'), 'ffmpeg not installed')
+    def test_shrink_makes_a_small_jpeg_with_real_ffmpeg(self):
+        big = subprocess.run(['ffmpeg', '-loglevel', 'error', '-f', 'lavfi', '-i', 'testsrc=size=1280x720',
+                              '-frames:v', '1', '-f', 'mjpeg', '-'], capture_output=True, check=True).stdout
+        small = self._real_shrink(big)
+        self.assertTrue(small.startswith(b'\xff\xd8'))
+        self.assertLess(len(small), len(big) / 3)
+        probe = subprocess.run(['ffprobe', '-loglevel', 'error', '-show_entries', 'stream=width,height',
+                                '-of', 'csv=p=0', '-'], input=small, capture_output=True, check=True).stdout
+        self.assertEqual(probe.decode().strip(), '320,180')
+        with self.assertRaises(self.camera.PreviewError):
+            self._real_shrink(b'not a jpeg')
+
+
 class TestCameraHistoryGate(PasscodeCase):
     """Past pictures, clips and bowl readings need the unlock; the latest picture doesn't."""
 
     def _private_urls(self):
         today = date.today().isoformat()
         return [f'/api/camera/day/{today}', f'/camera/frame/{today}T083000.jpg',
-                '/camera/clips/2026-11-15T153001/0.jpg']
+                '/camera/clips/2026-11-15T153001/0.jpg', f'/camera/preview/{today}T083000.jpg']
 
     def test_with_no_passcode_the_history_is_open(self):
         self.assertEqual(self.client.get(f'/api/camera/day/{date.today().isoformat()}').status_code, 200)
