@@ -1,8 +1,10 @@
 """Unlock, lock and set-passcode routes, and the gate in front of every write.
 
 Reading the dashboard is open. Once a passcode is set, every request that
-changes something needs this device's unlock cookie; the check is here on
-the server, whatever the page shows.
+changes something needs this device's unlock cookie, and so do the camera's
+past pictures, clips and bowl readings (everything under /camera/ and
+/api/camera/ but the latest picture). The check is here on the server,
+whatever the page shows.
 """
 
 import hmac
@@ -20,6 +22,11 @@ COOKIE = passcode.COOKIE
 # The one write a locked device may make: trying the passcode
 _OPEN_WHEN_LOCKED = {'/unlock'}
 _READS = {'GET', 'HEAD', 'OPTIONS'}
+# Past pictures, clips and bowl readings are private: these reads need the
+# unlock too. Gated by prefix, so a new camera route starts out locked and
+# only goes open by being added to the list below on purpose
+_PRIVATE_READ_PREFIXES = ('/camera/', '/api/camera/')
+_OPEN_CAMERA_READS = {'/camera/latest.jpg'}
 # Porch (a household companion page) feeds with this header instead of an
 # unlock. A header, not a cookie: a page on another site can't set it
 PORCH_HEADER = 'X-Porch-Key'
@@ -37,9 +44,15 @@ def porch_feed():
     return hmac.compare_digest(given.encode(), expected.encode())
 
 
+def private_read(path):
+    return path.startswith(_PRIVATE_READ_PREFIXES) and path not in _OPEN_CAMERA_READS
+
+
 def require_unlock():
     """before_request gate, registered after the Host and Origin checks."""
-    if request.method in _READS or request.path in _OPEN_WHEN_LOCKED:
+    if request.method in _READS and not private_read(request.path):
+        return None
+    if request.path in _OPEN_WHEN_LOCKED:
         return None
     if porch_feed():
         return None

@@ -8,6 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 from flask import Flask, Response, request, render_template, jsonify, send_file
 
+import bowl_history
 import camera
 from feeder_core import feed_pet, STATE_LOCK, log, setup_logging
 from feeding_stats import day_feedings, PORTION_CUPS
@@ -149,6 +150,30 @@ def camera_clip_frame(clip_id, index):
     # A saved clip never changes
     response.headers['Cache-Control'] = 'private, max-age=86400, immutable'
     return response
+
+
+@app.route('/camera/frame/<name>')
+def camera_saved_frame(name):
+    """One saved 5-minute frame, for the bowl history. Behind the unlock
+    (lock_routes gates every /camera/ read but the latest picture);
+    camera.saved_frame_path only answers for a name the folder lists."""
+    path = camera.saved_frame_path(name)
+    if not path:
+        return error_response('No such frame', 404)
+    response = send_file(os.path.abspath(path), mimetype='image/jpeg')
+    # A saved frame never changes. Private: never kept by a shared cache
+    response.headers['Cache-Control'] = 'private, max-age=86400, immutable'
+    return response
+
+
+@app.route('/api/camera/day/<date_str>')
+def camera_day(date_str):
+    """One day of the bowl history: frames, feeds with their clips and bowl
+    readings, blind-camera alerts. Behind the unlock; read-only."""
+    day = bowl_history.parse_day(date_str)
+    if day is None:
+        return jsonify({'success': False, 'error': 'Pick a day in the last 7 days (YYYY-MM-DD)'}), 400
+    return jsonify({'success': True, 'data': bowl_history.day_view(day)})
 
 
 @app.route('/feed', methods=['POST'])

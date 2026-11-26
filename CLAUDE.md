@@ -39,6 +39,7 @@ camera.py                 # Bowl webcam: one long-running ffmpeg stream; a frame
 bowl_watch.py             # Reads saved frames/clips: blind-camera alert, bowl before/30 min after each
                           #   dispense (empty/food/unknown) to data/bowl_readings.jsonl; meal alerts
                           #   only with PETFEEDR_MEAL_ALERTS=on (default off)
+bowl_history.py           # One day of frames + feeds + bowl readings for the history timeline (read-only)
 test_bowl_watch.py        # Its tests: frames drawn in code; PETFEEDR_REAL_FRAMES=<private dir> adds real ones
 servo_controller.py       # Motor control: portion sizes, dispense cycles, anti-jam agitation
 DRV8825.py                # GPIO abstraction; falls back to mock_gpio.py off-Pi only
@@ -82,6 +83,9 @@ Key invariants:
   Clips come from camera.py watching `feeding_events.jsonl`, never from a
   call on the feed path. `/camera/clips/<id>/<n>.jpg` reaches a file only
   through `camera.clip_frame_path`, which checks both parts.
+  `/camera/frame/<name>` reaches a file only through `camera.saved_frame_path`
+  (exact match against the folder listing). `bowl_history.py` builds the day
+  view for `/api/camera/day/<date>`; it is off the feed path too.
 - **The camera stream is started once and left running.** This webcam jams
   when a stream starts after an earlier one stopped, so camera.py restarts
   it only when it has died or stalled. Don't add per-shot captures.
@@ -96,7 +100,9 @@ Key invariants:
   a new POST route isn't on its list. One exception: POST /feed with Porch's
   `X-Porch-Key` (`PORCH_FEED_KEY` in the Pi's `.env`; unset = off) gets
   through for one small extra a day, logged as source `porch`. The key opens
-  nothing else. Extras are `feeding_stats.EXTRA_SOURCES` (manual, porch). Reads stay open. The feed path
+  nothing else. Extras are `feeding_stats.EXTRA_SOURCES` (manual, porch). Reads stay open, except the camera's past: every GET under `/camera/` and
+  `/api/camera/` but `/camera/latest.jpg` needs the unlock too (gated by prefix in
+  `lock_routes.private_read`, so a new camera route starts locked). The feed path
   (feeder_core, servo, PetFeedr.py) never imports passcode: scheduled feeds
   can't be locked out.
 - **Log through `logging.getLogger('petfeedr')`**, never the root
